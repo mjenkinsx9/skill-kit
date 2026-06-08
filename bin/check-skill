@@ -218,12 +218,16 @@ elif [[ -n "$description" ]]; then
 fi
 
 # ---- Check 9: body length (WARN > 500 lines) ---------------------------------
-# Body is everything after the closing --- of the frontmatter.
+# Body is everything after the closing --- of the frontmatter. If the file has
+# no frontmatter, body = full file. The print-when-not-in-fm logic below
+# handles both cases (sidecar files like tests.md and reference.md typically
+# have no frontmatter).
 body_lines=$(awk '
-    BEGIN { in_fm = 0; past_fm = 0 }
+    BEGIN { in_fm = 0 }
     NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
-    in_fm && /^---[[:space:]]*$/ { in_fm = 0; past_fm = 1; next }
-    past_fm { print }
+    in_fm && /^---[[:space:]]*$/ { in_fm = 0; next }
+    in_fm { next }
+    { print }
 ' "$skill_md" | wc -l)
 if (( body_lines > 500 )); then
     warn "9. body is $body_lines lines (>500); split into supporting files"
@@ -381,6 +385,112 @@ if (( in_live == 1 )); then
     else
         pass "15. PROMOTION-CHECKLIST.md present and records a value-add verdict"
     fi
+fi
+
+# ---- Checks 16 & 17: reference file hygiene (WARN) ---------------------------
+# Both encode published agent-skills best-practices for sidecar/reference files,
+# computed in a single walk of the skill dir tree. Excludes governance files
+# (frontmatter-bearing or repo-mechanical) and the non-reference sibling subdirs
+# scripts/ templates/ assets/ (own size guidance) and goals/ (staging-only
+# goal-campaign scaffolding from /goal-new-skill, not runtime reference material).
+#   16: keep each reference file under 200 lines — split into focused topics or
+#       move into a references/ subdir if larger (skillsdirectory file-structure).
+#   17: a reference file over 100 lines should open with a table of contents, so
+#       Claude sees the full scope even when it previews with a partial read
+#       (Anthropic "Structure longer reference files with table of contents").
+governance_re='^(SKILL|tests|test-prompts|PROMOTION-CHECKLIST|goal|README)\.md$'
+oversize=0
+notoc=0
+while IFS= read -r md; do
+    base=$(basename "$md")
+    rel_path="${md#"$skill_dir"/}"
+    case "$rel_path/" in
+        scripts/*|templates/*|assets/*|goals/*) continue ;;
+    esac
+    [[ "$base" =~ $governance_re ]] && continue
+    body_lines=$(awk '
+        BEGIN { in_fm = 0 }
+        NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
+        in_fm && /^---[[:space:]]*$/ { in_fm = 0; next }
+        in_fm { next }
+        { print }
+    ' "$md" | wc -l)
+    if (( body_lines > 200 )); then
+        if [[ "$rel_path" == "$base" ]]; then
+            warn "16. $rel_path is $body_lines lines (>200); split into multiple files or move into a references/ subdir"
+        else
+            warn "16. $rel_path is $body_lines lines (>200); split into smaller files"
+        fi
+        oversize=1
+    fi
+    # TOC heuristic: an H1-H3 heading whose text contains "contents"
+    # (matches "## Contents" and "## Table of Contents").
+    if (( body_lines > 100 )) && ! grep -qiE '^#{1,3}[[:space:]].*contents' "$md"; then
+        warn "17. $rel_path is $body_lines lines (>100) but has no table of contents — add a '## Contents' heading so Claude can navigate partial reads"
+        notoc=1
+    fi
+done < <(find "$skill_dir" -type f -name '*.md' | sort)
+if (( oversize == 0 )); then
+    pass "16. all reference files ≤200 lines"
+fi
+if (( notoc == 0 )); then
+    pass "17. all reference files >100 lines have a table of contents"
+fi
+
+# ---- Check 18: reference docs belong in references/ (WARN) -------------------
+# Skill-file-structure best practice: detailed reference docs live in a
+# references/ subdir (loaded on demand), not loose beside SKILL.md. Flags any
+# top-level .md that isn't a governance file — the moment a skill carries
+# reference content besides SKILL.md, recommend the references/ folder.
+# Governance files (SKILL.md + required sidecars) correctly stay at the root.
+gov_md_re='^(SKILL|tests|test-prompts|PROMOTION-CHECKLIST|goal|README)\.md$'
+stray_ref=0
+while IFS= read -r f; do
+    b=$(basename "$f")
+    [[ "$b" =~ $gov_md_re ]] && continue
+    warn "18. $b sits beside SKILL.md — move reference docs into a references/ subdir"
+    stray_ref=1
+done < <(find "$skill_dir" -maxdepth 1 -type f -name '*.md' | sort)
+if (( stray_ref == 0 )); then
+    pass "18. reference docs live in references/ (none loose beside SKILL.md)"
+fi
+
+# ---- Check 19: scripts belong in scripts/ (WARN) ----------------------------
+# Executable utilities live in a scripts/ subdir (executed, not loaded), not
+# loose beside SKILL.md. Flags top-level files with a script extension.
+stray_script=0
+while IFS= read -r f; do
+    warn "19. $(basename "$f") sits beside SKILL.md — move executable scripts into a scripts/ subdir"
+    stray_script=1
+done < <(find "$skill_dir" -maxdepth 1 -type f \( \
+    -name '*.py' -o -name '*.sh' -o -name '*.bash' -o -name '*.js' \
+    -o -name '*.ts' -o -name '*.rb' -o -name '*.pl' -o -name '*.ps1' \) | sort)
+if (( stray_script == 0 )); then
+    pass "19. scripts live in scripts/ (none loose beside SKILL.md)"
+fi
+
+# ---- Check 20: reference files are linked from SKILL.md (WARN) ---------------
+# The reverse of Check 11: Check 11 validates the files SKILL.md *does* link;
+# this catches the opposite failure — a bundled reference file that SKILL.md
+# never links, so Claude never loads it (an orphan). Encodes "Reference
+# supporting files from SKILL.md so Claude knows they exist." Heuristic: the
+# file's basename appears somewhere in SKILL.md. Same file set as Checks 16/17
+# (governance files and scripts/templates/assets/goals subdirs excluded).
+orphan=0
+while IFS= read -r md; do
+    base=$(basename "$md")
+    rel_path="${md#"$skill_dir"/}"
+    case "$rel_path/" in
+        scripts/*|templates/*|assets/*|goals/*) continue ;;
+    esac
+    [[ "$base" =~ $governance_re ]] && continue
+    if ! grep -qF "$base" "$skill_md"; then
+        warn "20. $rel_path is not linked from SKILL.md — reference it (or remove it); an unlinked file is never loaded"
+        orphan=1
+    fi
+done < <(find "$skill_dir" -type f -name '*.md' | sort)
+if (( orphan == 0 )); then
+    pass "20. all reference files are linked from SKILL.md"
 fi
 
 # ---- Summary -----------------------------------------------------------------
