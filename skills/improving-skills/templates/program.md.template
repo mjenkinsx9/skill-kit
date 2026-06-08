@@ -1,0 +1,45 @@
+# program.md — improving-skills run goals
+
+Copy this file to `.skill-kit/runs/<run-id>/program.md` and edit it before starting
+the loop. This file is the agent's north star for what to optimize.
+
+## Target
+
+Path to the SKILL.md being improved:
+```
+.skill-kit/runs/<run-id>/skill/SKILL.md
+```
+
+## Goals
+
+Pick one to three goals. Fewer is better — focused runs converge faster.
+
+- [ ] **Tighten triggers.** Reduce false fires on negative prompts while
+      keeping all positive prompts firing.
+- [ ] **Shrink body.** Reduce token count by ≥30% without losing
+      instruction quality.
+- [ ] **Sharpen instructions.** Improve LLM-as-judge quality scores on the
+      positive prompts; trigger accuracy must not regress.
+- [ ] **Promote progressive disclosure.** Move detail out of SKILL.md into
+      supporting files (kept one level deep).
+
+## Constraints
+
+These are non-negotiable. Every kept iteration must satisfy them.
+
+- Do not rename or remove frontmatter fields (`name`, `description`,
+  `disable-model-invocation`, etc).
+- Do not change the skill's `name` value (would break invocation).
+- Every kept iteration must pass `check-skill` cleanly.
+- Do not delete files referenced from SKILL.md without also removing the
+  reference.
+
+## Notes for the agent
+
+Free-form. Anything the agent should know that isn't captured above —
+context about the skill's intended user, terms to prefer/avoid, examples
+of what "better" looks like.
+
+```
+<your notes>
+```

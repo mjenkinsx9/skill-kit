@@ -1,0 +1,12 @@
+{
+  "name": "skill-kit",
+  "displayName": "Skill Kit",
+  "version": "0.1.0",
+  "description": "Author, evaluate, security-review, and autonomously improve Claude Agent Skills. Bundles the skill-building workflow as commands, agents, gate-enforcing hooks, and the static eval harness.",
+  "author": {
+    "name": "mjenkinsx9"
+  },
+  "homepage": "https://github.com/mjenkinsx9/mjenkins-toolbox",
+  "repository": "https://github.com/mjenkinsx9/mjenkins-toolbox",
+  "keywords": ["skills", "agent-skills", "authoring", "evaluation", "claude-code"]
+}

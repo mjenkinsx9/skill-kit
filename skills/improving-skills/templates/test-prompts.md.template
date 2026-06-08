@@ -1,0 +1,26 @@
+# Test prompts for <skill-name>
+
+Fixture for the improving-skills loop. Each row: a prompt and whether the
+skill should fire.
+
+Aim for ~10 positives and ~10 negatives. The negatives should be similar
+enough to the positives that a vague description would fire on both — they
+exist to penalize over-broad descriptions.
+
+Format: `should-fire | prompt`
+
+## Positive (should fire)
+
+```
+y | <prompt the skill should clearly handle>
+y | <variant phrasing>
+y | <edge case the skill should still catch>
+```
+
+## Negative (should NOT fire)
+
+```
+n | <prompt about an adjacent task that's NOT this skill's job>
+n | <a vague request that could be misread as in-scope>
+n | <a prompt this skill must decline so others can run>
+```

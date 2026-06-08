@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# value-add-test.sh - deterministic scaffolding for the value-add test.
+#
+# The value-add test asks: does running the skill beat just asking the model?
+# It is LLM-judged, so this script does ONLY the deterministic parts (mirroring
+# improving-skills/scripts/score-skill.sh): seed selection, A/B-order
+# randomization, run scaffolding, and the lift/verdict arithmetic. The
+# generation and judging are agent-driven — see ${CLAUDE_PLUGIN_ROOT}/reference/value-add-test.md.
+#
+# Usage:
+#   value-add-test.sh <skill-dir>            # preflight + seeds + protocol
+#   value-add-test.sh --tally <results.tsv>  # compute lift + PASS/CONCERN/FAIL
+#
+# results.tsv rows (agent fills after judging), tab-separated:
+#   seed<TAB>judge<TAB>skill_total<TAB>cold_total      (totals out of 50)
+#
+# Exit codes: 0 ok; 2 usage/preflight error.
+
+set -u
+
+# ---------- tally mode ----------
+if [[ "${1:-}" == "--tally" ]]; then
+    tsv="${2:-}"
+    [[ -f "$tsv" ]] || { echo "error: results.tsv not found: $tsv" >&2; exit 2; }
+    awk -F'\t' '
+        $1 ~ /^[0-9]/ {
+            if (NF < 4 || $3 !~ /^[0-9]+(\.[0-9]+)?$/ || $4 !~ /^[0-9]+(\.[0-9]+)?$/) {
+                printf "error: malformed data row %d (want seed<tab>judge<tab>skill<tab>cold, numeric scores): %s\n", NR, $0 > "/dev/stderr"
+                bad=1; exit 2
+            }
+            seen[$1]=1
+            sk[$1]+=$3; cd[$1]+=$4; n[$1]++
+            tsk+=$3; tcd+=$4; tn++
+        }
+        END {
+            if (bad) exit 2
+            if (tn == 0) { print "error: no data rows in results.tsv" > "/dev/stderr"; exit 2 }
+            won=0; seeds=0
+            for (s in seen) {
+                seeds++
+                ssk=sk[s]/n[s]; scd=cd[s]/n[s]
+                w = (ssk>scd) ? "skill" : (scd>ssk ? "cold" : "tie")
+                if (ssk>scd) won++
+                printf "  seed %s: skill %.1f vs cold %.1f -> %s\n", s, ssk, scd, w
+            }
+            msk=tsk/tn; mcd=tcd/tn; lift=msk-mcd
+            printf "\naggregate: skill %.1f vs cold %.1f  (lift %+.1f / 50)\n", msk, mcd, lift
+            printf "seeds won by skill: %d/%d\n", won, seeds
+            verdict = "CONCERN"
+            if (lift <= -1.5) verdict = "FAIL"
+            else if (lift >= 1.5 && won*2 > seeds) verdict = "PASS"
+            printf "VERDICT: %s\n", verdict
+            if (verdict=="FAIL")    print "  -> the skill loses to cold model; lead with substance, demote scaffolding, re-run."
+            if (verdict=="CONCERN") print "  -> marginal/split; investigate and acknowledge in the PROMOTION-CHECKLIST."
+            if (verdict=="PASS")    print "  -> clear value-add over the baseline."
+        }
+    ' "$tsv"
+    exit $?   # propagate awk's exit (2 on malformed/empty data) instead of masking it
+fi
+
+# ---------- preflight + protocol mode ----------
+if [[ $# -ne 1 ]]; then
+    echo "usage: $0 <skill-dir>   |   $0 --tally <results.tsv>" >&2
+    exit 2
+fi
+
+skill_dir="$1"
+[[ -d "$skill_dir" ]] || { echo "error: not a directory: $skill_dir" >&2; exit 2; }
+[[ -f "$skill_dir/SKILL.md" ]] || { echo "error: no SKILL.md in $skill_dir" >&2; exit 2; }
+tp="$skill_dir/test-prompts.md"
+[[ -f "$tp" ]] || { echo "error: no test-prompts.md in $skill_dir (need positive seeds)" >&2; exit 2; }
+
+# Extract positive prompts: numbered list lines under the "Positive" heading.
+# The block ends at the NEXT heading of any kind (not only one titled "Negative"),
+# so a "## Counter-examples"-style section can't leak negative prompts into the
+# seed set. Strip the leading number and surrounding quotes.
+# (read loop instead of mapfile — portable to bash 3.2 on macOS)
+positives=()
+while IFS= read -r line; do
+    positives+=("$line")
+done < <(
+    awk '
+        /^#+/ { if (grab && $0 !~ /[Pp]ositive/) grab=0 }   # any non-positive heading ends the block
+        /^#+.*[Pp]ositive/ {grab=1; next}
+        grab && /^[0-9]+\./ {
+            sub(/^[0-9]+\.[ \t]*/, "")
+            gsub(/^["\x27]|["\x27][ \t]*$/, "")
+            print
+        }
+    ' "$tp"
+)
+
+count=${#positives[@]}
+if (( count < 3 )); then
+    echo "error: need >=3 positive prompts in $tp (found $count)" >&2
+    exit 2
+fi
+
+# Sample first / middle / last.
+idx=(0 $((count/2)) $((count-1)))
+
+run_id="value-add-$(date +%Y-%m-%d-%H%M)"
+run_dir="runs/$run_id"
+mkdir -p "$run_dir"
+tsv="$run_dir/results.tsv"
+printf 'seed\tjudge\tskill_total\tcold_total\n' > "$tsv"
+
+echo "value-add preflight: $skill_dir"
+echo "  positives found: $count   |   seeds selected: 3 (first/middle/last)"
+echo "  run dir: $run_dir"
+echo "  results.tsv (agent fills after judging): $tsv"
+echo
+echo "Run the protocol in ${CLAUDE_PLUGIN_ROOT}/reference/value-add-test.md. For each seed below, generate"
+echo "the SKILL arm and the COLD arm in fresh sub-agents, then 2 blind judges."
+echo "Present the two outputs to each judge in the given A/B order (skill hidden)."
+echo
+n=1
+for i in "${idx[@]}"; do
+    # vary A/B order per seed deterministically-enough via $RANDOM
+    if (( RANDOM % 2 == 0 )); then order="A=skill B=cold"; else order="A=cold B=skill"; fi
+    echo "seed $n  [order: $order]"
+    echo "  prompt: ${positives[$i]}"
+    echo "  gen=AGENT  judge=AGENT  (write rows: \"$n<TAB>1<TAB>...<TAB>...\" and \"$n<TAB>2<TAB>...<TAB>...\")"
+    echo
+    n=$((n+1))
+done
+echo "When results.tsv is filled:  $0 --tally $tsv"

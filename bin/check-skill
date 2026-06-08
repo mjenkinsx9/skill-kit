@@ -1,0 +1,389 @@
+#!/usr/bin/env bash
+# check-skill.sh - static best-practices harness for SKILL.md files.
+#
+# Usage:
+#   eval/check-skill.sh <path-to-SKILL.md-or-skill-dir>
+#
+# Exits 0 iff there are no FAILs. WARNs do not affect exit code.
+# Encodes the published rules from:
+#   https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
+#   https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview
+#   https://code.claude.com/docs/en/skills
+
+set -u
+
+if [[ $# -ne 1 ]]; then
+    echo "usage: $0 <path-to-SKILL.md-or-skill-dir>" >&2
+    exit 2
+fi
+
+# Detect a working Python. On Windows the default `python3` is the
+# Microsoft Store shim, which fails with a non-zero exit and a stderr nag.
+PY=""
+for candidate in python3 python "py -3"; do
+    if $candidate -c "import sys" >/dev/null 2>&1; then
+        PY="$candidate"
+        break
+    fi
+done
+if [[ -z "$PY" ]]; then
+    echo "error: no working Python interpreter found (tried: python3, python, py -3)" >&2
+    exit 2
+fi
+
+target="$1"
+if [[ -d "$target" ]]; then
+    skill_dir="$target"
+    skill_md="$target/SKILL.md"
+else
+    skill_md="$target"
+    skill_dir="$(dirname "$target")"
+fi
+
+if [[ ! -f "$skill_md" ]]; then
+    echo "error: $skill_md not found" >&2
+    exit 2
+fi
+
+fails=0
+warns=0
+
+pass() { printf "  PASS  %s\n" "$1"; }
+warn() { printf "  WARN  %s\n" "$1"; warns=$((warns+1)); }
+fail() { printf "  FAIL  %s\n" "$1"; fails=$((fails+1)); }
+
+printf "checking: %s\n" "$skill_md"
+
+# ---- Extract frontmatter -----------------------------------------------------
+# Frontmatter must be the first thing in the file, delimited by --- lines.
+fm=$(awk '
+    BEGIN { in_fm = 0; done = 0 }
+    NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
+    in_fm && /^---[[:space:]]*$/ { done = 1; exit }
+    in_fm { print }
+' "$skill_md")
+
+if [[ -z "$fm" ]]; then
+    fail "1. frontmatter missing or not delimited by --- markers at top of file"
+    echo
+    echo "summary: $fails FAIL, $warns WARN"
+    exit 1
+fi
+
+# ---- Check 1: YAML parses ----------------------------------------------------
+if printf "%s\n" "$fm" | $PY -c "
+import sys, yaml
+try:
+    d = yaml.safe_load(sys.stdin.read())
+    if not isinstance(d, dict):
+        sys.exit('frontmatter is not a YAML mapping')
+except yaml.YAMLError as e:
+    sys.exit(f'YAML parse error: {e}')
+" 2>/tmp/check-skill-err; then
+    pass "1. frontmatter parses as YAML"
+else
+    fail "1. frontmatter does not parse as YAML: $(cat /tmp/check-skill-err)"
+fi
+
+# Pull name + description into shell variables (NUL-separated for safety).
+read_field() {
+    printf "%s\n" "$fm" | $PY -c "
+import sys, yaml
+d = yaml.safe_load(sys.stdin.read()) or {}
+v = d.get('$1')
+sys.stdout.write('' if v is None else str(v))
+"
+}
+name=$(read_field name)
+description=$(read_field description)
+
+# ---- Check 2: name --------------------------------------------------------
+if [[ -z "$name" ]]; then
+    # The Claude Code spec allows omitting name (folder name is used). We still
+    # require it here for portability with the API spec, which mandates it.
+    fail "2. name field is missing or empty"
+else
+    name_len=${#name}
+    if (( name_len > 64 )); then
+        fail "2. name is $name_len chars (max 64)"
+    elif ! [[ "$name" =~ ^[a-z0-9-]+$ ]]; then
+        fail "2. name must match ^[a-z0-9-]+\$ (got: $name)"
+    elif [[ "$name" == *anthropic* || "$name" == *claude* ]]; then
+        fail "2. name contains reserved word 'anthropic' or 'claude'"
+    elif [[ "$name" == *"<"* || "$name" == *">"* ]]; then
+        fail "2. name contains XML tag characters"
+    else
+        pass "2. name '$name' is valid"
+    fi
+fi
+
+# ---- Check 3: name matches folder (when invoked on a dir) --------------------
+if [[ -d "$target" && -n "$name" ]]; then
+    folder=$(basename "$(cd "$skill_dir" && pwd)")
+    if [[ "$folder" == "$name" ]]; then
+        pass "3. name matches folder ($folder)"
+    else
+        fail "3. name '$name' does not match folder '$folder'"
+    fi
+fi
+
+# ---- Check 4: gerund-form name (WARN) ----------------------------------------
+# Heuristic: the first hyphen-separated segment ends in -ing.
+if [[ -n "$name" ]]; then
+    first_segment="${name%%-*}"
+    if [[ "$first_segment" == *ing ]]; then
+        pass "4. name uses gerund form ($first_segment)"
+    else
+        warn "4. name does not use gerund form ('$first_segment' should ideally end in -ing, e.g. 'processing-pdfs')"
+    fi
+fi
+
+# ---- Check 5: description present, valid -------------------------------------
+if [[ -z "$description" ]]; then
+    fail "5. description field is missing or empty"
+else
+    desc_len=${#description}
+    if (( desc_len > 1024 )); then
+        fail "5. description is $desc_len chars (max 1024)"
+    elif [[ "$description" == *"<"* || "$description" == *">"* ]]; then
+        fail "5. description contains XML tag characters"
+    else
+        pass "5. description is non-empty and within limits ($desc_len chars)"
+    fi
+fi
+
+# ---- Check 6: description in third person (FAIL) -----------------------------
+# Heuristic: doesn't start with "I "/"You "/"We "; doesn't contain "I can",
+# "you can", "I will", "we will" (case-insensitive).
+if [[ -n "$description" ]]; then
+    desc_lower=$(printf "%s" "$description" | tr '[:upper:]' '[:lower:]')
+    bad=""
+    case "$desc_lower" in
+        "i "*|"you "*|"we "*) bad="starts with first/second-person pronoun" ;;
+    esac
+    if [[ -z "$bad" ]]; then
+        for phrase in "i can " "you can " "i will " "we will " "i'll " "you'll "; do
+            if [[ "$desc_lower" == *"$phrase"* ]]; then
+                bad="contains '$phrase'"
+                break
+            fi
+        done
+    fi
+    if [[ -n "$bad" ]]; then
+        fail "6. description uses first/second person ($bad) — write in third person"
+    else
+        pass "6. description uses third person"
+    fi
+fi
+
+# ---- Check 7: description has "when" trigger language (WARN) -----------------
+if [[ -n "$description" ]]; then
+    if [[ "$desc_lower" == *"use when"* || "$desc_lower" == *"when the user"* || "$desc_lower" == *"when working"* || "$desc_lower" == *" for "* || "$desc_lower" == *"when "* ]]; then
+        pass "7. description includes trigger language"
+    else
+        warn "7. description lacks explicit 'when to use' language (e.g. 'Use when...')"
+    fi
+
+    # ---- Check 7b: trigger precision (WARN) ----------------------------------
+    # A description can pass 7 ("...use when you have data to process") yet be too
+    # generic to discriminate. Good descriptions enumerate concrete alternative
+    # triggers ("review a PR, audit a diff, or check changes"). Heuristic: take
+    # the clause after the trigger phrase and count comma-/`or`-separated
+    # segments; warn if fewer than 2. WARN-only — a legitimately single-trigger
+    # skill is a tolerable false positive (a nudge, not a block).
+    trigger_clause="${desc_lower#*use when }"
+    if [[ "$trigger_clause" == "$desc_lower" ]]; then
+        trigger_clause="${desc_lower#*when the user }"
+    fi
+    if [[ "$trigger_clause" != "$desc_lower" ]]; then
+        # Normalize " or " to commas, then count non-empty comma-separated parts.
+        seg_count=$(printf '%s' "$trigger_clause" \
+            | sed -E 's/ or /,/g' \
+            | tr ',' '\n' \
+            | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
+            | grep -c '[a-z]')
+        if (( seg_count < 2 )); then
+            warn "7b. trigger clause may be too generic — enumerate ≥2 concrete conditions (e.g. 'Use when the user asks to review a PR, audit a diff, or check changes')"
+        else
+            pass "7b. trigger clause enumerates $seg_count concrete conditions"
+        fi
+    fi
+fi
+
+# ---- Check 8: description long enough to be useful (WARN) --------------------
+if [[ -n "$description" ]] && (( ${#description} < 40 )); then
+    warn "8. description is only ${#description} chars — likely too vague to drive discovery"
+elif [[ -n "$description" ]]; then
+    pass "8. description has substantive length"
+fi
+
+# ---- Check 9: body length (WARN > 500 lines) ---------------------------------
+# Body is everything after the closing --- of the frontmatter.
+body_lines=$(awk '
+    BEGIN { in_fm = 0; past_fm = 0 }
+    NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
+    in_fm && /^---[[:space:]]*$/ { in_fm = 0; past_fm = 1; next }
+    past_fm { print }
+' "$skill_md" | wc -l)
+if (( body_lines > 500 )); then
+    warn "9. body is $body_lines lines (>500); split into supporting files"
+else
+    pass "9. body is $body_lines lines (≤500)"
+fi
+
+# ---- Check 10: no Windows-style backslash paths in body ----------------------
+# Anchored to real Windows path shapes only: drive-letter paths (C:\Users\…) or
+# UNC paths (\\host\share). The earlier broad pattern (word\word) false-positived
+# on inline C-style escapes like 'a\b', '\n' in prose, and regex examples.
+# Trade-off: a driveless relative path like 'dir\file' is no longer caught — rare
+# in SKILL.md, and the broad pattern's false-positives were the real problem.
+win_path_re='([A-Za-z]:\\[A-Za-z0-9_.\\-]+|\\\\[A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+)'
+if grep -nE "$win_path_re" "$skill_md" >/dev/null 2>&1; then
+    bad_lines=$(grep -nE "$win_path_re" "$skill_md" | head -3)
+    fail "10. Windows-style backslash paths found:"
+    while IFS= read -r line; do printf "         %s\n" "$line"; done <<< "$bad_lines"
+else
+    pass "10. no Windows-style backslash paths"
+fi
+
+# ---- Check 11: deep reference nesting (WARN) ---------------------------------
+# Look at .md files referenced from SKILL.md; if any of those reference further
+# .md files inside the skill dir, warn.
+linked_mds=$(grep -oE '\]\([^)]+\.md\)' "$skill_md" | sed -E 's/^\]\(([^)]+)\)$/\1/' | grep -vE '^https?://' || true)
+deep=0
+for ref in $linked_mds; do
+    ref_path="$skill_dir/$ref"
+    if [[ -f "$ref_path" ]]; then
+        if grep -qE '\]\([^)]+\.md\)' "$ref_path"; then
+            deep=1
+            warn "11. $ref links to other .md files — references should be one level deep from SKILL.md"
+        fi
+    fi
+done
+if (( deep == 0 )); then
+    pass "11. references are one level deep"
+fi
+
+# ---- Check 12: security smells (WARN) ----------------------------------------
+smells=0
+report_smell() {
+    smells=1
+    warn "12. security smell: $1"
+}
+if grep -nE 'curl[^|]*\|[[:space:]]*sh' "$skill_md" >/dev/null 2>&1; then
+    report_smell "'curl ... | sh' pattern (matches line $(grep -nE 'curl[^|]*\|[[:space:]]*sh' "$skill_md" | head -1 | cut -d: -f1))"
+fi
+if grep -nE 'rm[[:space:]]+-rf' "$skill_md" >/dev/null 2>&1; then
+    report_smell "'rm -rf' (matches line $(grep -nE 'rm[[:space:]]+-rf' "$skill_md" | head -1 | cut -d: -f1))"
+fi
+if grep -nE 'base64[[:space:]]+(-d|--decode)' "$skill_md" >/dev/null 2>&1; then
+    report_smell "base64 decode (matches line $(grep -nE 'base64[[:space:]]+(-d|--decode)' "$skill_md" | head -1 | cut -d: -f1))"
+fi
+if grep -nE 'curl[[:space:]]+(-X[[:space:]]*POST|--data|-d[[:space:]])' "$skill_md" >/dev/null 2>&1; then
+    report_smell "outbound POST via curl (matches line $(grep -nE 'curl[[:space:]]+(-X[[:space:]]*POST|--data|-d[[:space:]])' "$skill_md" | head -1 | cut -d: -f1))"
+fi
+if (( smells == 0 )); then
+    pass "12. no security smells detected"
+fi
+
+# ---- Check 13: no secrets (FAIL) --------------------------------------------
+# Lines carrying the opt-in marker 'allowlist secret' (detect-secrets
+# convention, e.g. `<!-- pragma: allowlist secret -->`) are exempt — this lets
+# a security/example skill show realistic key shapes without failing. A genuine
+# accidental leak won't carry the marker, so detection strength is preserved.
+secret_hit=0
+# secret_scan PATTERN -> matching "line:text" rows with allowlisted lines removed.
+secret_scan() { grep -nE "$1" "$skill_md" 2>/dev/null | grep -v 'allowlist secret'; }
+scan_sk=$(secret_scan '\bsk-[A-Za-z0-9_-]{16,}')
+if [[ -n "$scan_sk" ]]; then
+    fail "13. potential Anthropic-style API key (sk-...) at line $(printf '%s\n' "$scan_sk" | head -1 | cut -d: -f1)"
+    secret_hit=1
+fi
+scan_ghp=$(secret_scan '\bghp_[A-Za-z0-9]{30,}')
+if [[ -n "$scan_ghp" ]]; then
+    fail "13. potential GitHub personal access token (ghp_...) at line $(printf '%s\n' "$scan_ghp" | head -1 | cut -d: -f1)"
+    secret_hit=1
+fi
+scan_akia=$(secret_scan '\bAKIA[0-9A-Z]{16}\b')
+if [[ -n "$scan_akia" ]]; then
+    fail "13. potential AWS access key (AKIA...) at line $(printf '%s\n' "$scan_akia" | head -1 | cut -d: -f1)"
+    secret_hit=1
+fi
+if (( secret_hit == 0 )); then
+    pass "13. no secrets detected"
+fi
+
+# ---- Check 14: tests.md sidecar ---------------------------------------------
+# Path-sensitive: FAIL when the skill lives outside staging/, WARN when in
+# staging/. The intent is to enforce "do the work then codify" before a skill
+# is promoted to .claude/skills/ or examples/.
+tests_md="$skill_dir/tests.md"
+# Detect whether any path component is "staging" (resolve relative-to-cwd via
+# the path the user passed in, not the absolute path — staging-ness is a
+# logical placement in this repo, not a filesystem property).
+in_staging=0
+case "/$target/" in
+    */staging/*) in_staging=1 ;;
+esac
+
+if [[ ! -f "$tests_md" ]]; then
+    if (( in_staging == 1 )); then
+        warn "14. tests.md sidecar missing (acceptable in staging/; required before promotion)"
+    else
+        fail "14. tests.md sidecar missing — required for skills outside staging/"
+    fi
+else
+    # Check 14a: Last verified date is present.
+    if ! grep -qE '^Last verified:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}' "$tests_md"; then
+        fail "14. tests.md is missing a 'Last verified: YYYY-MM-DD' line"
+    else
+        # Check 14b: at least 3 scenario headings (H2 sections after the Last-verified line).
+        scenario_count=$(grep -cE '^## ' "$tests_md" || true)
+        if (( scenario_count < 3 )); then
+            warn "14. tests.md has $scenario_count scenarios (want ≥3: golden/edge/error)"
+        else
+            # Check 14c: staleness — warn if Last verified is older than 90 days.
+            last_date=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' "$tests_md" | head -1)
+            today=$(date +%Y-%m-%d)
+            age_days=$($PY -c "
+from datetime import date
+last = date.fromisoformat('$last_date')
+today = date.fromisoformat('$today')
+print((today - last).days)
+" 2>/dev/null || echo 0)
+            if (( age_days > 90 )); then
+                warn "14. tests.md Last verified is $age_days days old (re-verify if the skill is still in use)"
+            else
+                pass "14. tests.md present, $scenario_count scenarios, verified $age_days days ago"
+            fi
+        fi
+    fi
+fi
+
+# ---- Check 15: PROMOTION-CHECKLIST.md (WARN-only) ----------------------------
+# Nudge only for skills promoted-live under .claude/skills/ — a live skill
+# should carry its promotion record. staging/ (not promoted yet), examples/
+# (reference material, never promoted), and bare SKILL.md paths are exempt.
+# WARN-only, never FAIL: examples/ ship no checklist and must stay clean.
+in_live=0
+case "/$target/" in
+    */.claude/skills/*) in_live=1 ;;
+esac
+if (( in_live == 1 )); then
+    checklist="$skill_dir/PROMOTION-CHECKLIST.md"
+    if [[ ! -f "$checklist" ]]; then
+        warn "15. PROMOTION-CHECKLIST.md missing (recommended for promoted skills; see templates/skill-skeleton)"
+    # Require a CHECKED box with a resolved verdict token — so a copied-but-
+    # unfilled template (unchecked `[ ]` with the `PASS | CONCERN | FAIL` menu)
+    # does not satisfy the check.
+    elif ! grep -Eqi '\[x\].*value-add verdict.*(PASS|CONCERN|FAIL|N/?A)' "$checklist"; then
+        warn "15. PROMOTION-CHECKLIST.md has no checked Value-add verdict line (PASS/CONCERN/FAIL/N/A)"
+    else
+        pass "15. PROMOTION-CHECKLIST.md present and records a value-add verdict"
+    fi
+fi
+
+# ---- Summary -----------------------------------------------------------------
+echo
+echo "summary: $fails FAIL, $warns WARN"
+[[ $fails -eq 0 ]]

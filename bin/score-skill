@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# score-skill.sh - mechanical scoring helper for the improving-skills loop.
+#
+# Usage:
+#   score-skill.sh <candidate-SKILL.md> [<baseline-SKILL.md>]
+#
+# Emits one line of key=value pairs the loop agent parses:
+#
+#   harness=PASS|FAIL  tokens=<int>  efficiency=<float|NA>  trigger=AGENT  quality=AGENT  composite=AGENT
+#
+# - harness:    PASS only when check-skill exits 0 on the candidate
+# - tokens:     approximate token count (word count * 1.3, rounded)
+# - efficiency: min(1.0, baseline_tokens / candidate_tokens) if baseline given;
+#               otherwise NA
+# - trigger:    AGENT - the loop agent computes this from test-prompts.md
+# - quality:    AGENT - the loop agent computes this via LLM-as-judge
+# - composite:  AGENT - the loop agent combines the pieces above
+#
+# Exit codes:
+#   0  - script ran successfully (harness result is in the output)
+#   2  - usage error
+
+set -u
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+    echo "usage: $0 <candidate-SKILL.md> [<baseline-SKILL.md>]" >&2
+    exit 2
+fi
+
+candidate="$1"
+baseline="${2:-}"
+
+if [[ ! -f "$candidate" ]]; then
+    echo "error: candidate not found: $candidate" >&2
+    exit 2
+fi
+
+# Locate the harness. score-skill and check-skill ship side by side in the
+# plugin's bin/, so the harness is always this script's sibling — no repo
+# layout assumed, works wherever the plugin is installed.
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+harness="$script_dir/check-skill"
+
+if [[ ! -x "$harness" ]]; then
+    echo "error: harness not executable at $harness" >&2
+    exit 2
+fi
+
+token_count() {
+    # Word count * 1.3 is a cheap, model-agnostic token approximation.
+    # Sufficient for relative comparison across iterations of the same skill.
+    local words
+    words=$(wc -w <"$1" | tr -d ' ')
+    awk "BEGIN { printf \"%d\", $words * 1.3 + 0.5 }"
+}
+
+# Run the harness; capture exit code without exiting this script.
+if "$harness" "$candidate" >/dev/null 2>&1; then
+    harness_result="PASS"
+else
+    harness_result="FAIL"
+fi
+
+cand_tokens=$(token_count "$candidate")
+
+if [[ -n "$baseline" && -f "$baseline" ]]; then
+    base_tokens=$(token_count "$baseline")
+    efficiency=$(awk "BEGIN {
+        e = $base_tokens / $cand_tokens
+        if (e > 1.0) e = 1.0
+        printf \"%.3f\", e
+    }")
+else
+    efficiency="NA"
+fi
+
+printf "harness=%s tokens=%d efficiency=%s trigger=AGENT quality=AGENT composite=AGENT\n" \
+    "$harness_result" "$cand_tokens" "$efficiency"

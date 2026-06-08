@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Deterministic helpers for the in-session empirical trigger-accuracy harness.
+
+The harness measures whether a skill *actually* fires (the model calls the Skill
+tool) on its positive fixture prompts and declines on its negatives — ground
+truth, versus the simulated "would you fire?" self-prediction the improving-skills
+loop uses today. See ${CLAUDE_PLUGIN_ROOT}/reference/trigger-accuracy.md for the full orchestrator procedure.
+
+This script does only the parts a script can do deterministically:
+  parse-prompts <test-prompts.md>     parse y|/n| fixtures -> JSON
+  detect <agent.jsonl> --skill NAME   did this one transcript fire the skill?
+  score  <runs.json>   --skill NAME   detect every run + aggregate -> JSON contract
+
+The orchestrator (Claude, following the .md) does the part a script cannot: spawn
+one Agent sub-agent per prompt-run with the raw prompt, collect each agentId, and
+hand them to `score`. Pure stdlib — no third-party deps.
+"""
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+CLI_VERSION_TESTED = "2.1.159"  # claude CLI the detection schema was validated against
+
+# A fixture row: "y | <prompt>" (should fire) or "n | <prompt>" (should not).
+FIXTURE_RE = re.compile(r"^\s*([yn])\s*\|\s*(.+?)\s*$", re.IGNORECASE)
+
+
+def parse_prompts(path: Path) -> list[dict]:
+    """Parse a test-prompts.md into [{prompt, should_fire}]. Exit 2 on bad input."""
+    if not path.is_file():
+        sys.exit(f"error: test-prompts file not found: {path}")
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = FIXTURE_RE.match(line)
+        if m:
+            rows.append({"prompt": m.group(2), "should_fire": m.group(1).lower() == "y"})
+    if not rows:
+        sys.exit(
+            "error: no 'y | ...' / 'n | ...' fixture rows found. This harness only "
+            "supports the canonical test-prompts.md format; convert numbered-list "
+            "fixtures to 'y | prompt' / 'n | prompt' rows."
+        )
+    pos = sum(r["should_fire"] for r in rows)
+    neg = len(rows) - pos
+    if pos == 0 or neg == 0:
+        sys.exit(f"error: need >=1 positive and >=1 negative prompt (got {pos} pos, {neg} neg)")
+    return rows
+
+
+def _tool_uses(transcript: Path):
+    """Yield (tool_name, input_dict) for every tool_use block in a sub-agent transcript."""
+    for line in transcript.read_text(encoding="utf-8").splitlines():
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        msg = obj.get("message") if isinstance(obj.get("message"), dict) else None
+        content = msg.get("content") if msg else obj.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    yield block.get("name"), (block.get("input") or {})
+
+
+def resolve_transcript(agent_id: str) -> Path | None:
+    """Map an Agent-tool agentId to its transcript jsonl under ~/.claude/projects."""
+    base = Path.home() / ".claude" / "projects"
+    matches = sorted(base.glob(f"*/*/subagents/agent-{agent_id}.jsonl"))
+    return matches[0] if matches else None
+
+
+def detect_fire(transcript: Path, skill: str, skill_md: str | None = None) -> dict:
+    """Decide whether `transcript` fired the target skill.
+
+    fired           target Skill(skill=NAME) called, or a Read of its SKILL.md (fallback)
+    other_skill_fired  the first *different* skill that fired (a "stealer"), else None
+    """
+    if not transcript or not transcript.is_file():
+        return {"fired": False, "other_skill_fired": None, "error": "transcript-not-found"}
+    skill_md_norm = skill_md.replace("\\", "/").lower() if skill_md else None
+    fired = False
+    other = None
+    for name, inp in _tool_uses(transcript):
+        if name == "Skill":
+            invoked = (inp.get("skill") or "").strip()
+            # Accept exact or namespaced suffix match (e.g. "plugin:reviewing-x").
+            if invoked == skill or invoked.endswith(":" + skill):
+                fired = True
+            elif invoked and other is None:
+                other = invoked
+        elif name == "Read" and skill_md_norm:
+            fp = (inp.get("file_path") or "").replace("\\", "/").lower()
+            if fp.endswith(skill_md_norm) or fp == skill_md_norm:
+                fired = True
+    return {"fired": fired, "other_skill_fired": other, "error": None}
+
+
+def score(runs: list[dict], skill: str, skill_md: str | None, threshold: float) -> dict:
+    """Detect every run and aggregate into the trigger-accuracy contract."""
+    prompt_results = []
+    tp = fp = tn = fn = inconclusive = 0
+    for entry in runs:
+        prompt = entry["prompt"]
+        should_fire = bool(entry["should_fire"])
+        fired_count = errors = 0
+        stealers = []
+        run_total = 0
+        for agent_id in entry.get("agent_ids", []):
+            res = detect_fire(resolve_transcript(agent_id), skill, skill_md)
+            if res["error"]:
+                errors += 1
+                continue
+            run_total += 1
+            if res["fired"]:
+                fired_count += 1
+            elif res["other_skill_fired"]:
+                stealers.append(res["other_skill_fired"])
+        rate = (fired_count / run_total) if run_total else 0.0
+        if run_total == 0:
+            # No valid runs (every transcript missing/unreadable). Inconclusive —
+            # NOT a correct decline. Exclude it from the tally so a broken run
+            # can't inflate the score with phantom true-negatives (or true-misses).
+            passed = None
+            inconclusive += 1
+        elif should_fire:
+            passed = rate >= threshold
+            (tp, fn) = (tp + 1, fn) if passed else (tp, fn + 1)
+        else:
+            passed = rate < threshold
+            (tn, fp) = (tn + 1, fp) if passed else (tn, fp + 1)
+        prompt_results.append({
+            "query": prompt,
+            "should_fire": should_fire,
+            "fired_count": fired_count,
+            "runs": run_total,
+            "rate": round(rate, 3),
+            "pass": passed,
+            "errors": errors,
+            "other_skill_fired": stealers[0] if stealers else None,
+        })
+
+    n = tp + fp + tn + fn
+    precision = tp / (tp + fp) if (tp + fp) else 1.0
+    recall = tp / (tp + fn) if (tp + fn) else 1.0
+    accuracy = (tp + tn) / n if n else 0.0
+    return {
+        "skill": skill,
+        "mechanism": "in-session-installed",
+        "threshold": threshold,
+        "cli_version_tested": CLI_VERSION_TESTED,
+        "prompts": prompt_results,
+        "aggregate": {
+            "n": n, "positives": tp + fn, "negatives": tn + fp, "inconclusive": inconclusive,
+            "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+            "precision": round(precision, 3), "recall": round(recall, 3),
+            "accuracy": round(accuracy, 3), "trigger": round(accuracy, 3),
+        },
+    }
+
+
+def _summary(result: dict) -> str:
+    a = result["aggregate"]
+    lines = [
+        f"skill={result['skill']}  mechanism={result['mechanism']}  threshold={result['threshold']}",
+        f"trigger(accuracy)={a['trigger']}  precision={a['precision']}  recall={a['recall']}  "
+        f"(tp={a['tp']} fp={a['fp']} tn={a['tn']} fn={a['fn']}, scored n={a['n']})",
+    ]
+    if a.get("inconclusive"):
+        lines.insert(0, f"WARNING: {a['inconclusive']} prompt(s) had 0 valid runs - INCONCLUSIVE, "
+                        f"excluded from the score; re-run before trusting the number.")
+    for p in result["prompts"]:
+        flag = "INCONC" if p["pass"] is None else ("PASS" if p["pass"] else "FAIL")
+        steal = f"  stolen-by:{p['other_skill_fired']}" if p["other_skill_fired"] else ""
+        err = f"  errors:{p['errors']}" if p["errors"] else ""
+        lines.append(
+            f"  [{flag}] fire={p['fired_count']}/{p['runs']} expect={'y' if p['should_fire'] else 'n'}"
+            f"{steal}{err}  {p['query'][:64]}"
+        )
+    return "\n".join(lines)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p_parse = sub.add_parser("parse-prompts", help="parse a test-prompts.md into JSON")
+    p_parse.add_argument("prompts_file")
+
+    p_detect = sub.add_parser("detect", help="did one transcript fire the skill?")
+    p_detect.add_argument("transcript")
+    p_detect.add_argument("--skill", required=True)
+    p_detect.add_argument("--skill-md", default=None)
+
+    p_score = sub.add_parser("score", help="detect every run in runs.json and aggregate")
+    p_score.add_argument("runs_file", help="JSON: [{prompt, should_fire, agent_ids:[...]}]")
+    p_score.add_argument("--skill", required=True)
+    p_score.add_argument("--skill-md", default=None)
+    p_score.add_argument("--threshold", type=float, default=0.5)
+
+    args = ap.parse_args()
+
+    if args.cmd == "parse-prompts":
+        print(json.dumps(parse_prompts(Path(args.prompts_file)), indent=2))
+    elif args.cmd == "detect":
+        t = Path(args.transcript)
+        print(json.dumps(detect_fire(t, args.skill, args.skill_md), indent=2))
+    elif args.cmd == "score":
+        runs = json.loads(Path(args.runs_file).read_text(encoding="utf-8"))
+        result = score(runs, args.skill, args.skill_md, args.threshold)
+        print(_summary(result), file=sys.stderr)
+        print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    main()

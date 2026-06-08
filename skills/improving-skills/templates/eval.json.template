@@ -1,0 +1,34 @@
+{
+  "target": ".skill-kit/runs/<run-id>/skill/SKILL.md",
+  "test_prompts": ".skill-kit/runs/<run-id>/test-prompts.md",
+
+  "scorer": "score-skill",
+  "harness": "check-skill",
+
+  "weights": {
+    "_comment": "Composite = 0.4*trigger + 0.4*quality + 0.2*efficiency. Trigger and quality are weighted equally — both are first-order skill quality. Efficiency is a tiebreaker that must NOT dominate (it would reward shrinking a skill into uselessness), hence 0.2. Tune per run if goal.md prioritizes one axis.",
+    "trigger": 0.4,
+    "quality": 0.4,
+    "efficiency": 0.2
+  },
+
+  "stopping": {
+    "_comment": "Heuristics, all tunable per run. max_iterations caps total work. no_improvement_for stops a stuck optimizer after N tries to escape a local max. score_ceiling stops once the composite is effectively exhausted — but a maxed composite proves the skill is tight, NOT that it beats the cold model. That is the value-add test's job (SKILL.md Step 5), which runs once after the loop stops.",
+    "max_iterations": 20,
+    "no_improvement_for": 5,
+    "score_ceiling": 0.95
+  },
+
+  "trigger_mode": "simulated",
+  "_trigger_mode_comment": "How the trigger dimension is scored each iteration. 'simulated' (default, cheap) dispatches trigger_prompt to a fresh sub-agent that PREDICTS whether it would fire — safe to run every iteration. 'empirical' runs ${CLAUDE_PLUGIN_ROOT}/reference/trigger-accuracy.md, which spawns real Agent sub-agents and OBSERVES the actual Skill call (ground truth) — costs N_prompts * trigger_runs_per_query sub-agents per iteration, so reserve it for short or high-stakes runs. Both yield accuracy on [0,1], so the composite weights are unchanged. Regardless of mode, the loop runs the empirical harness ONCE at loop end and records simulated-vs-empirical so simulation bias is visible.",
+  "trigger_runs_per_query": 3,
+  "trigger_threshold": 0.5,
+
+  "trigger_prompt": "Given ONLY this skill description:\n\n<desc>\n\nWould you invoke this skill for the user prompt below? Reply with exactly 'yes' or 'no' and nothing else.\n\nPrompt: <prompt>",
+
+  "quality_judge": {
+    "_comment": "Replaces the old vague 'adhere to purpose' prompt. Scores the candidate skill's output against ONE tests.md scenario's Expected behavior. MUST run in a fresh sub-agent with clean context — never inline, since the orchestrator has read the skill and would contaminate the score (same isolation rule as ${CLAUDE_PLUGIN_ROOT}/reference/value-add-test.md). The default rubric mirrors value-add-test.md's five dimensions; the judge returns a single 0-10 (their mean) so the existing /10 -> quality normalization holds.",
+    "prompt": "Score how well OUTPUT satisfies the scenario's EXPECTED BEHAVIOR, using the skill's INSTRUCTIONS as context. Rate five dimensions 0-10 each — rigor, evidence, actionability, risk-awareness, signal-to-noise — then reply with ONLY their mean as a single integer 0-10. Inputs:\n\nINSTRUCTIONS: <skill>\nEXPECTED BEHAVIOR: <expected>\nOUTPUT: <output>",
+    "dimensions": ["rigor", "evidence", "actionability", "risk-awareness", "signal-to-noise"]
+  }
+}
