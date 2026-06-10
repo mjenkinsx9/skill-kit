@@ -91,8 +91,9 @@ JSON contract (below) on stdout plus a human summary on stderr.
 ### 5. Restore and interpret
 Restore the real SKILL.md from the backup. Read the verdict: `aggregate.trigger` (accuracy) is the
 headline; `recall` low with populated `other_skill_fired` entries means a **competitor is stealing
-positives**; `precision` low means the description is **over-firing on negatives** (sharpen it —
-see `writing-descriptions.md`).
+positives**; `precision` low means the description is **over-firing on negatives** (sharpen it — keep the
+scope's edges concrete so it declines near-misses: prompts that share keywords but need
+something else).
 
 ## Output contract
 
@@ -109,7 +110,7 @@ see `writing-descriptions.md`).
 ```
 
 `aggregate.trigger` **= accuracy = (tp+tn)/n**, identical to the simulated trigger formula in
-`${CLAUDE_PLUGIN_ROOT}/skills/improving-skills/scoring.md`, so it is a drop-in for that loop's composite.
+`${CLAUDE_PLUGIN_ROOT}/skills/improving-skills/references/scoring.md`, so it is a drop-in for that loop's composite.
 
 ## Cost, positioning, and caveats
 

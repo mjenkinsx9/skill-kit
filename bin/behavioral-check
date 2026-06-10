@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""behavioral-check — run a skill's tests.md scenarios for real and report.
+
+The static linter (check-skill.sh) proves a skill is *well-formed*; the value-add
+and trigger tests probe its *description*. None of them RUN the skill's actual
+tooling. For a tool-wrapping skill the question that matters most — does the
+documented command actually reach the system and return sane output *today*? — is
+only answered by executing its tests.md scenarios live.
+
+This script does the deterministic part: it extracts the runnable commands from a
+skill's tests.md, runs each one (read-only by the skill author's contract), and
+reports each command's exit code, an output preview, and a few automatic sanity
+flags (timeout / traceback / empty). It deliberately does NOT judge pass/fail
+against the scenario's "Expected"/"Result" prose — that semantic comparison is the
+orchestrator's job (see ${CLAUDE_PLUGIN_ROOT}/reference/behavioral-check.md). Pure stdlib.
+
+Usage:
+  behavioral-check <skill-dir> [--cwd DIR] [--timeout S] [--dry-run] [--json]
+
+  <skill-dir>   skill directory containing tests.md (or a direct path to tests.md)
+  --cwd DIR     working directory to run the commands from (default: current dir).
+                Point this at the checkout where the skill's commands resolve —
+                i.e. where scripts/ and the credentials (.env) actually live. For a
+                git worktree that lacks the gitignored .env, pass the main checkout.
+  --timeout S   per-command timeout in seconds (default 120)
+  --dry-run     extract and print the commands WITHOUT running them (review first)
+  --json        emit the structured result as JSON on stdout (default: readable report)
+
+Exit: 0 when every command ran to completion; 1 if any command timed out or
+crashed with a traceback (a genuine behavioral failure); 2 on usage / no-tests /
+no-commands errors. A non-zero *command* exit is NOT a harness failure — error
+scenarios are expected to exit non-zero.
+
+Safety: this EXECUTES commands taken verbatim from tests.md. Only point it at
+skills whose tests.md you trust; our skills' scenarios are read-only by contract.
+Use --dry-run first to see exactly what will run.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# A command line we are willing to execute: a known launcher, optionally preceded
+# by inline VAR=value env assignments (e.g. `CERT_SCAN_TIMEOUT=4 python ...`).
+ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+COMMAND_START = re.compile(rf"^{ENV_PREFIX}(python3?|bash|sh|pwsh|powershell|node|\./)\b")
+ENV_ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(\S+)\s+")
+FENCE_RE = re.compile(r"^```(\w+)?\s*$")
+PREVIEW_CHARS = 200
+
+
+def find_tests_md(target: Path) -> Path:
+    """Resolve a skill dir (or a direct tests.md path) to its tests.md file."""
+    if target.is_file():
+        return target
+    candidate = target / "tests.md"
+    if candidate.is_file():
+        return candidate
+    print(f"error: no tests.md found at {target} (pass a skill dir or a tests.md path)",
+          file=sys.stderr)
+    sys.exit(2)
+
+
+def extract_commands(md_text: str) -> list[dict]:
+    """Pull runnable commands from tests.md, tagged with their nearest heading.
+
+    Sources both fenced ```bash/```sh blocks and inline-backtick spans (skills in
+    this repo use both styles). A span/line qualifies only if it starts with a
+    known launcher, so prose like `status` or `capacity_percent` is ignored. Each
+    command is kept once; when it appears under both a generic preamble and a real
+    "Scenario N" heading, the scenario label wins.
+    """
+    hits: list[dict] = []
+    scenario = "(setup)"
+    in_fence = False
+    for raw in md_text.splitlines():
+        stripped = raw.strip()
+        if not in_fence and stripped.startswith("#"):
+            scenario = stripped.lstrip("#").strip() or scenario
+            continue
+        if FENCE_RE.match(stripped):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            if stripped and not stripped.startswith("#") and COMMAND_START.match(stripped):
+                hits.append({"scenario": scenario, "command": stripped})
+            continue
+        for span in re.findall(r"`([^`]+)`", raw):
+            s = span.strip()
+            if COMMAND_START.match(s):
+                hits.append({"scenario": scenario, "command": s})
+
+    by_cmd: dict[str, str] = {}
+    order: list[str] = []
+    for h in hits:
+        cmd, sc = h["command"], h["scenario"]
+        if cmd not in by_cmd:
+            by_cmd[cmd] = sc
+            order.append(cmd)
+        elif "scenario" in sc.lower() and "scenario" not in by_cmd[cmd].lower():
+            by_cmd[cmd] = sc  # prefer a real scenario label over a preamble one
+    return [{"scenario": by_cmd[c], "command": c} for c in order]
+
+
+def split_env(cmd: str) -> tuple:
+    """Peel leading VAR=value assignments off a command into (env_dict, remainder).
+
+    Inline `VAR=x cmd` is POSIX-shell syntax that Windows cmd.exe does not honor, so
+    we apply the assignments via the subprocess env instead — keeping it cross-platform.
+    """
+    env, rest = {}, cmd
+    while True:
+        m = ENV_ASSIGN.match(rest)
+        if not m:
+            return env, rest
+        env[m.group(1)] = m.group(2)
+        rest = rest[m.end():]
+
+
+def run_command(cmd: str, cwd: Path, timeout: int) -> dict:
+    extra_env, real_cmd = split_env(cmd)
+    run_env = {**os.environ, **extra_env} if extra_env else None
+    try:
+        proc = subprocess.run(
+            real_cmd, shell=True, cwd=str(cwd), capture_output=True,
+            encoding="utf-8", errors="replace", timeout=timeout, env=run_env)
+        return {"exit": proc.returncode, "stdout": proc.stdout or "",
+                "stderr": proc.stderr or "", "timed_out": False}
+    except subprocess.TimeoutExpired as e:
+        return {"exit": None, "stdout": e.stdout or "", "stderr": e.stderr or "",
+                "timed_out": True}
+
+
+def flags_for(res: dict) -> list[str]:
+    combined = res["stdout"] + "\n" + res["stderr"]
+    flags = []
+    if res["timed_out"]:
+        flags.append("TIMEOUT")
+    if "Traceback (most recent call last)" in combined:
+        flags.append("TRACEBACK")
+    if not res["stdout"].strip():
+        flags.append("EMPTY-STDOUT")
+    return flags
+
+
+def preview(res: dict) -> str:
+    text = res["stdout"].strip() or res["stderr"].strip()
+    one_line = " ".join(text.split())
+    body = one_line[:PREVIEW_CHARS]
+    if len(one_line) > PREVIEW_CHARS:
+        body += " …"
+    return body
+
+
+def main() -> int:
+    for _stream in (sys.stdout, sys.stderr):
+        try:  # keep non-ASCII (em-dashes, JSON) intact on a cp1252 Windows console
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("skill", help="skill directory (contains tests.md) or a tests.md path")
+    ap.add_argument("--cwd", default=".", help="dir to run commands from (default: current dir)")
+    ap.add_argument("--timeout", type=int, default=120, help="per-command timeout, seconds")
+    ap.add_argument("--dry-run", action="store_true", help="print commands without running them")
+    ap.add_argument("--json", action="store_true", help="emit structured JSON on stdout")
+    args = ap.parse_args()
+
+    tests_md = find_tests_md(Path(args.skill))
+    skill_name = tests_md.parent.name
+    commands = extract_commands(tests_md.read_text(encoding="utf-8"))
+    if not commands:
+        print(f"error: no runnable commands found in {tests_md} "
+              f"(expected fenced ```bash blocks or inline `python …` commands)", file=sys.stderr)
+        sys.exit(2)
+
+    run_dir = Path(args.cwd).resolve()
+    print(f"behavioral-check: {skill_name}  (tests.md: {tests_md})", file=sys.stderr)
+    print(f"run-dir: {run_dir}", file=sys.stderr)
+    if any("scripts/" in c["command"] for c in commands) and not (run_dir / "scripts").is_dir():
+        print(f"WARNING: {run_dir} has no scripts/ subdir — the commands may not resolve. "
+              f"Pass --cwd <checkout> where scripts/ and .env live.", file=sys.stderr)
+
+    if args.dry_run:
+        for c in commands:
+            print(f"  [{c['scenario']}]  {c['command']}")
+        return 0
+
+    results = []
+    harness_fail = False
+    last_scenario = None
+    for c in commands:
+        if c["scenario"] != last_scenario:
+            print(f"\n[{c['scenario']}]", file=sys.stderr)
+            last_scenario = c["scenario"]
+        res = run_command(c["command"], run_dir, args.timeout)
+        flags = flags_for(res)
+        label = "ERR " if ("TIMEOUT" in flags or "TRACEBACK" in flags) else "RAN "
+        if label.strip() == "ERR":
+            harness_fail = True
+        exit_str = "timeout" if res["timed_out"] else f"exit={res['exit']}"
+        flag_str = ("  " + " ".join(flags)) if flags else ""
+        print(f"  {label} {exit_str}{flag_str}  {c['command']}", file=sys.stderr)
+        print(f"        {preview(res)}", file=sys.stderr)
+        results.append({"scenario": c["scenario"], "command": c["command"],
+                        "exit": res["exit"], "timed_out": res["timed_out"],
+                        "flags": flags, "stdout": res["stdout"], "stderr": res["stderr"]})
+
+    nonzero = sum(1 for r in results if r["exit"] not in (0, None))
+    timeouts = sum(1 for r in results if r["timed_out"])
+    tracebacks = sum(1 for r in results if "TRACEBACK" in r["flags"])
+    print(f"\nsummary: {len(results)} commands run, {timeouts} timeouts, "
+          f"{tracebacks} tracebacks, {nonzero} non-zero exit "
+          f"(non-zero is expected for error scenarios)", file=sys.stderr)
+    print("NOTE: this harness only RUNS the scenarios. Compare each output against the "
+          "'Expected'/'Result' prose in tests.md to decide PASS/FAIL.", file=sys.stderr)
+
+    if args.json:
+        print(json.dumps({"skill": skill_name, "tests_md": str(tests_md),
+                          "run_dir": str(run_dir), "results": results}, indent=2))
+    return 1 if harness_fail else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -3,6 +3,13 @@
 The modify → verify → keep-or-revert cycle. Loaded only when running an
 improving-skills session.
 
+## Contents
+
+- [Iteration](#iteration)
+- [Stopping conditions](#stopping-conditions)
+- [results.tsv format](#resultstsv-format)
+- [Recovery](#recovery)
+
 ## Iteration
 
 The fixtures (`test-prompts.md`, `tests.md`) are copied into `.skill-kit/runs/<run-id>/` at

@@ -108,6 +108,9 @@ lone anomalous seed shouldn't flip a clear majority.
   value isn't reaching the user (usually format/scaffolding burying substance, or
   no real edge over the base model).
 
+At the default N=3 × 2 judges the verdict rests on only 6 rows — treat margins
+within ±1.5 as noise, and add seeds (5+) before acting on a CONCERN.
+
 ## What a FAIL / CONCERN means (and the fairness note)
 
 The skill is judged on its **real deliverable, format included**, against a
@@ -142,7 +145,8 @@ the deterministic `check-skill.sh` hard-blocks.
 
 ## Artifact
 
-Record to `runs/value-add-<id>/results.tsv` (per-seed/per-judge rows:
-`seed<TAB>judge<TAB>skill_total<TAB>cold_total`) plus a one-paragraph summary.
-`runs/` is gitignored — the verdict is a recorded diagnostic, not a committed
+Record to `.skill-kit/runs/value-add-<id>/results.tsv` in the consuming project
+(per-seed/per-judge rows: `seed<TAB>judge<TAB>skill_total<TAB>cold_total`) plus a
+one-paragraph summary. Consumers should gitignore `.skill-kit/` — the plugin's
+docs recommend it — since the verdict is a recorded diagnostic, not a committed
 gate file.

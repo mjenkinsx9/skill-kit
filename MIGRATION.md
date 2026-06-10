@@ -31,16 +31,41 @@ dev-bench harness (no shims), so the two repos evolve independently.
 
 ## Remaining
 
-- [ ] **Real-world portability test.** Install the plugin in a throwaway
-      *non-skill-testing* project and run `/skill-kit:improving-skills` end to end
-      to confirm `${CLAUDE_PLUGIN_ROOT}` / PATH resolution outside this repo. This
-      is the next ripe item — it gates the de-dup below.
+- [x] **Real-world portability test** — *run 2026-06-10 in a throwaway
+      non-dev-bench project under a simulated install* (plugin `bin/` on PATH,
+      `${CLAUDE_PLUGIN_ROOT}` + `${CLAUDE_PROJECT_DIR}` set). Verified: bare-name
+      resolution for all six helpers, `score-skill`'s sibling-harness lookup,
+      `.skill-kit/runs/` placement, Check 21 degrading to "no staging twin", and
+      a full improving-skills loop (results in
+      `skills/improving-skills/tests.md`). **Found and fixed a real portability
+      bug:** `value-add-test` only parsed the legacy numbered-list fixture
+      format, while the plugin's template (and `trigger-accuracy`) use canonical
+      `y | prompt` rows — consumers following the template hit a hard error.
+      Both twins now accept both formats, canonical preferred.
+- [ ] **True marketplace-install smoke test.** The simulated environment covers
+      the mechanics, but a real `/plugin marketplace add` + `/plugin install`
+      in an interactive session is the last-mile check (namespaced `/skill-kit:`
+      invocation, registry-installed triggering for the empirical
+      trigger-accuracy harness).
 - [x] **De-duplicate protocol assets** — *resolved by the repo split.*
       `value-add-test.{md,sh}` and `trigger-accuracy.{md,py}` now live in two
       independent repos: `eval/` is canonical in the skill-testing dev-bench, and
       `bin/` + `reference/` are canonical in this plugin. They are no longer two
       copies in one tree to collapse — each repo owns its own, and they evolve on
-      their own cadence. The methodology is stable, so drift risk is low.
+      their own cadence. ~~The methodology is stable, so drift risk is low.~~
+      **Correction (2026-06-10):** drift risk was NOT low — one week after the
+      split the dev-bench harness was 144 lines ahead (hardening, self-tests,
+      new checks). Resynced in full; [SYNC.md](SYNC.md) now tracks every file
+      pair and its intentional adaptations, with a pre-release drift check.
+- [x] **2026-06-10 resync from the dev-bench.** Ported: hardened `check-skill`
+      (mktemp scratch file, real Check 7 trigger lint, tree-wide Checks 10/12/13,
+      Check 14b/14c fixes, new Check 21), value-add tally small-sample caveat,
+      the `references/` + TOC restructure of `improving-skills` (now 0 FAIL /
+      0 WARN under its own harness), the new `behavioral-check` live harness,
+      the harness self-test suite + CI workflow (`tests/`,
+      `.github/workflows/harness.yml`), and the MIT license. Plugin-only fixes
+      in the same pass: `value-add-test` run dir → `.skill-kit/runs/`, dangling
+      `writing-descriptions.md` pointer inlined.
 
 ## Reconsidered: `agents/` — none earns its place yet
 

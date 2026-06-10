@@ -50,8 +50,9 @@ if [[ "${1:-}" == "--tally" ]]; then
             if (lift <= -1.5) verdict = "FAIL"
             else if (lift >= 1.5 && won*2 > seeds) verdict = "PASS"
             printf "VERDICT: %s\n", verdict
+            printf "note: verdict rests on %d seed-judge rows; treat margins within +/-1.5 as noise -- add seeds (5+) before acting on a CONCERN.\n", tn
             if (verdict=="FAIL")    print "  -> the skill loses to cold model; lead with substance, demote scaffolding, re-run."
-            if (verdict=="CONCERN") print "  -> marginal/split; investigate and acknowledge in the PROMOTION-CHECKLIST."
+            if (verdict=="CONCERN") print "  -> marginal/split; investigate, consider re-running with more seeds (5+), and acknowledge in the PROMOTION-CHECKLIST."
             if (verdict=="PASS")    print "  -> clear value-add over the baseline."
         }
     ' "$tsv"
@@ -70,22 +71,36 @@ skill_dir="$1"
 tp="$skill_dir/test-prompts.md"
 [[ -f "$tp" ]] || { echo "error: no test-prompts.md in $skill_dir (need positive seeds)" >&2; exit 2; }
 
-# Extract positive prompts: numbered list lines under the "Positive" heading.
-# The block ends at the NEXT heading of any kind (not only one titled "Negative"),
-# so a "## Counter-examples"-style section can't leak negative prompts into the
-# seed set. Strip the leading number and surrounding quotes.
+# Extract positive prompts. Two fixture formats are supported:
+#   canonical: 'y | prompt' rows (the test-prompts.md template format, and the
+#              only format trigger-accuracy accepts) — a 'y' row is a positive
+#              wherever it appears, so no heading tracking is needed;
+#   legacy:    numbered list lines under the "Positive" heading. The block ends
+#              at the NEXT heading of any kind (not only one titled "Negative"),
+#              so a "## Counter-examples"-style section can't leak negative
+#              prompts into the seed set. Number and quotes are stripped.
+# Canonical rows win when both formats are present.
 # (read loop instead of mapfile — portable to bash 3.2 on macOS)
 positives=()
 while IFS= read -r line; do
     positives+=("$line")
 done < <(
     awk '
+        /^[[:space:]]*[yY][[:space:]]*\|/ {
+            sub(/^[[:space:]]*[yY][[:space:]]*\|[[:space:]]*/, "")
+            canon[++nc]=$0
+            next
+        }
         /^#+/ { if (grab && $0 !~ /[Pp]ositive/) grab=0 }   # any non-positive heading ends the block
         /^#+.*[Pp]ositive/ {grab=1; next}
         grab && /^[0-9]+\./ {
             sub(/^[0-9]+\.[ \t]*/, "")
             gsub(/^["\x27]|["\x27][ \t]*$/, "")
-            print
+            legacy[++nl]=$0
+        }
+        END {
+            n = (nc > 0) ? nc : nl
+            for (i = 1; i <= n; i++) print (nc > 0) ? canon[i] : legacy[i]
         }
     ' "$tp"
 )
@@ -100,7 +115,7 @@ fi
 idx=(0 $((count/2)) $((count-1)))
 
 run_id="value-add-$(date +%Y-%m-%d-%H%M)"
-run_dir="runs/$run_id"
+run_dir="${CLAUDE_PROJECT_DIR:-.}/.skill-kit/runs/$run_id"
 mkdir -p "$run_dir"
 tsv="$run_dir/results.tsv"
 printf 'seed\tjudge\tskill_total\tcold_total\n' > "$tsv"
@@ -116,7 +131,7 @@ echo "Present the two outputs to each judge in the given A/B order (skill hidden
 echo
 n=1
 for i in "${idx[@]}"; do
-    # vary A/B order per seed deterministically-enough via $RANDOM
+    # randomize A/B order per seed via $RANDOM; record the order so judging stays blind but auditable
     if (( RANDOM % 2 == 0 )); then order="A=skill B=cold"; else order="A=cold B=skill"; fi
     echo "seed $n  [order: $order]"
     echo "  prompt: ${positives[$i]}"

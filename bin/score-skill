@@ -63,7 +63,7 @@ fi
 
 cand_tokens=$(token_count "$candidate")
 
-if [[ -n "$baseline" && -f "$baseline" ]]; then
+if [[ -n "$baseline" && -f "$baseline" ]] && (( cand_tokens > 0 )); then
     base_tokens=$(token_count "$baseline")
     efficiency=$(awk "BEGIN {
         e = $base_tokens / $cand_tokens

@@ -3,6 +3,13 @@
 How `score-skill` composes the iteration score, and how to read
 `results.tsv`.
 
+## Contents
+
+- [Composite](#composite)
+- [Components](#components)
+- [Reading results.tsv](#reading-resultstsv)
+- [What the composite does NOT measure](#what-the-composite-does-not-measure)
+
 ## Composite
 
 ```

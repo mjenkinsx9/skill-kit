@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# check-skill.sh - static best-practices harness for SKILL.md files.
+# check-skill - static best-practices harness for SKILL.md files.
 #
 # Usage:
-#   eval/check-skill.sh <path-to-SKILL.md-or-skill-dir>
+#   check-skill <path-to-SKILL.md-or-skill-dir>
 #
 # Exits 0 iff there are no FAILs. WARNs do not affect exit code.
 # Encodes the published rules from:
@@ -32,6 +32,10 @@ if [[ -z "$PY" ]]; then
 fi
 
 target="$1"
+# Normalize away a trailing slash (e.g. from shell glob `dir/*/`): downstream
+# rel-path stripping assumes $skill_dir has no trailing /, and a stray one
+# silently disables the scripts/templates/goals exclusions in Checks 16-20.
+target="${target%/}"
 if [[ -d "$target" ]]; then
     skill_dir="$target"
     skill_md="$target/SKILL.md"
@@ -47,6 +51,12 @@ fi
 
 fails=0
 warns=0
+
+# Scratch file for capturing stderr from helper invocations. mktemp (not a
+# fixed /tmp path) so concurrent runs don't collide; the EXIT trap guarantees
+# no litter remains regardless of how the script exits.
+err_file=$(mktemp "${TMPDIR:-/tmp}/check-skill-err.XXXXXX")
+trap 'rm -f "$err_file"' EXIT
 
 pass() { printf "  PASS  %s\n" "$1"; }
 warn() { printf "  WARN  %s\n" "$1"; warns=$((warns+1)); }
@@ -79,10 +89,10 @@ try:
         sys.exit('frontmatter is not a YAML mapping')
 except yaml.YAMLError as e:
     sys.exit(f'YAML parse error: {e}')
-" 2>/tmp/check-skill-err; then
+" 2>"$err_file"; then
     pass "1. frontmatter parses as YAML"
 else
-    fail "1. frontmatter does not parse as YAML: $(cat /tmp/check-skill-err)"
+    fail "1. frontmatter does not parse as YAML: $(cat "$err_file")"
 fi
 
 # Pull name + description into shell variables (NUL-separated for safety).
@@ -177,9 +187,18 @@ if [[ -n "$description" ]]; then
 fi
 
 # ---- Check 7: description has "when" trigger language (WARN) -----------------
+# PASS only on genuine trigger phrasing. The earlier heuristic also accepted a
+# bare " for " or mid-sentence "when ", which made the check unfailable —
+# "Generates widget summaries for engineers..." sailed through with zero
+# trigger language. Now require one of the recognized trigger phrases below;
+# "for <task noun>" and a bare mid-sentence "when" are deliberately NOT enough.
+# (desc_lower is already lowercased, so a plain ERE match is case-insensitive.)
+trigger_re='(use (this skill )?when(ever)?|use for|when the user|when working|when asked|triggers? when)'
+trigger_ok=0
 if [[ -n "$description" ]]; then
-    if [[ "$desc_lower" == *"use when"* || "$desc_lower" == *"when the user"* || "$desc_lower" == *"when working"* || "$desc_lower" == *" for "* || "$desc_lower" == *"when "* ]]; then
+    if printf '%s' "$desc_lower" | grep -qE "$trigger_re"; then
         pass "7. description includes trigger language"
+        trigger_ok=1
     else
         warn "7. description lacks explicit 'when to use' language (e.g. 'Use when...')"
     fi
@@ -188,25 +207,31 @@ if [[ -n "$description" ]]; then
     # A description can pass 7 ("...use when you have data to process") yet be too
     # generic to discriminate. Good descriptions enumerate concrete alternative
     # triggers ("review a PR, audit a diff, or check changes"). Heuristic: take
-    # the clause after the trigger phrase and count comma-/`or`-separated
-    # segments; warn if fewer than 2. WARN-only — a legitimately single-trigger
-    # skill is a tolerable false positive (a nudge, not a block).
-    trigger_clause="${desc_lower#*use when }"
-    if [[ "$trigger_clause" == "$desc_lower" ]]; then
-        trigger_clause="${desc_lower#*when the user }"
-    fi
-    if [[ "$trigger_clause" != "$desc_lower" ]]; then
-        # Normalize " or " to commas, then count non-empty comma-separated parts.
-        seg_count=$(printf '%s' "$trigger_clause" \
-            | sed -E 's/ or /,/g' \
-            | tr ',' '\n' \
-            | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
-            | grep -c '[a-z]')
-        if (( seg_count < 2 )); then
-            warn "7b. trigger clause may be too generic — enumerate ≥2 concrete conditions (e.g. 'Use when the user asks to review a PR, audit a diff, or check changes')"
+    # the clause after whichever trigger phrase Check 7 matched and count
+    # comma-/`or`-separated segments; warn if fewer than 2. WARN-only — a
+    # legitimately single-trigger skill is a tolerable false positive (a nudge,
+    # not a block). Always emits exactly one line: if Check 7 warned there is no
+    # trigger language to analyze, and that is itself reported as a 7b WARN.
+    if (( trigger_ok == 1 )); then
+        trigger_match=$(printf '%s' "$desc_lower" | grep -oE "$trigger_re" | head -1)
+        trigger_clause="${desc_lower#*"$trigger_match"}"
+        if [[ -z "$trigger_match" || -z "${trigger_clause//[[:space:]]/}" ]]; then
+            warn "7b. could not locate a trigger clause to analyze — put the trigger conditions right after the trigger phrase (e.g. 'Use when the user asks to X, Y, or Z')"
         else
-            pass "7b. trigger clause enumerates $seg_count concrete conditions"
+            # Normalize " or " to commas, then count non-empty comma-separated parts.
+            seg_count=$(printf '%s' "$trigger_clause" \
+                | sed -E 's/ or /,/g' \
+                | tr ',' '\n' \
+                | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
+                | grep -c '[a-z]')
+            if (( seg_count < 2 )); then
+                warn "7b. trigger clause may be too generic — enumerate ≥2 concrete conditions (e.g. 'Use when the user asks to review a PR, audit a diff, or check changes')"
+            else
+                pass "7b. trigger clause enumerates $seg_count concrete conditions"
+            fi
         fi
+    else
+        warn "7b. no trigger language found (see Check 7) — no enumerable trigger conditions to analyze"
     fi
 fi
 
@@ -235,17 +260,48 @@ else
     pass "9. body is $body_lines lines (≤500)"
 fi
 
-# ---- Check 10: no Windows-style backslash paths in body ----------------------
+# Governance files: frontmatter-bearing or repo-mechanical .md files that stay
+# at the skill root. Shared by Checks 10, 16, 17, 18, and 20.
+governance_re='^(SKILL|tests|test-prompts|PROMOTION-CHECKLIST|goal|README)\.md$'
+
+# ---- Check 10: no Windows-style backslash paths (FAIL) ------------------------
 # Anchored to real Windows path shapes only: drive-letter paths (C:\Users\…) or
 # UNC paths (\\host\share). The earlier broad pattern (word\word) false-positived
 # on inline C-style escapes like 'a\b', '\n' in prose, and regex examples.
 # Trade-off: a driveless relative path like 'dir\file' is no longer caught — rare
 # in SKILL.md, and the broad pattern's false-positives were the real problem.
+#
+# Scope: SKILL.md plus reference .md files (same walk/exclusions as Checks
+# 16/17: scripts/, templates/, assets/, goals/ subdirs and governance files
+# other than SKILL.md are skipped — scripts may legitimately contain Windows
+# paths). Design decision: the extension stays FAIL-level for reference files
+# (no current skill in this repo carries a Windows path in one, so nothing
+# regresses), and — mirroring Check 13's secret pragma — a line that
+# legitimately documents a Windows path (e.g. a skill about a Windows CLI) can
+# opt out per line with the marker 'allowlist windows-path'
+# (e.g. `C:\Users\... <!-- allowlist windows-path -->`). A genuine portability
+# bug won't carry the marker, so enforcement strength is preserved.
 win_path_re='([A-Za-z]:\\[A-Za-z0-9_.\\-]+|\\\\[A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+)'
-if grep -nE "$win_path_re" "$skill_md" >/dev/null 2>&1; then
-    bad_lines=$(grep -nE "$win_path_re" "$skill_md" | head -3)
+win_hits=""
+while IFS= read -r md; do
+    base=$(basename "$md")
+    rel_path="${md#"$skill_dir"/}"
+    if [[ "$md" -ef "$skill_md" ]]; then
+        rel_path="SKILL.md"
+    else
+        case "$rel_path/" in
+            scripts/*|templates/*|assets/*|goals/*) continue ;;
+        esac
+        [[ "$base" =~ $governance_re ]] && continue
+    fi
+    file_hits=$(grep -nE "$win_path_re" "$md" 2>/dev/null | grep -v 'allowlist windows-path' | head -3 | sed "s|^|$rel_path:|")
+    if [[ -n "$file_hits" ]]; then
+        win_hits="${win_hits}${file_hits}"$'\n'
+    fi
+done < <(find "$skill_dir" -type f -name '*.md' | sort)
+if [[ -n "$win_hits" ]]; then
     fail "10. Windows-style backslash paths found:"
-    while IFS= read -r line; do printf "         %s\n" "$line"; done <<< "$bad_lines"
+    printf '%s' "$win_hits" | head -3 | while IFS= read -r line; do printf "         %s\n" "$line"; done
 else
     pass "10. no Windows-style backslash paths"
 fi
@@ -268,24 +324,50 @@ if (( deep == 0 )); then
     pass "11. references are one level deep"
 fi
 
+# ---- Checks 12 & 13: scan set ------------------------------------------------
+# Both security checks scan the WHOLE skill tree, not just SKILL.md — a
+# `curl | sh` hidden in scripts/install.sh or a key leaked into
+# references/reference.md is exactly the payload a SKILL.md-only scan misses.
+# Set: every *.md plus every script file (*.py *.sh *.bash *.js *.ts *.rb *.pl
+# *.ps1) anywhere under the skill dir, including scripts/, references/, and
+# templates/. Findings are reported as <relative-path>:<line>.
+scan_files=$(find "$skill_dir" -type f \( -name '*.md' \
+    -o -name '*.py' -o -name '*.sh' -o -name '*.bash' -o -name '*.js' \
+    -o -name '*.ts' -o -name '*.rb' -o -name '*.pl' -o -name '*.ps1' \) | sort)
+
 # ---- Check 12: security smells (WARN) ----------------------------------------
+# PROMOTION-CHECKLIST.md is excluded from the smell scan only: per CLAUDE.md it
+# records the exact post-promotion strip commands (e.g. `rm -rf goal.md goals/`)
+# by design, and it is a repo-governance record, not runtime skill content.
+# It is NOT excluded from the secret scan (Check 13) — a leaked key is never
+# legitimate anywhere.
 smells=0
 report_smell() {
     smells=1
     warn "12. security smell: $1"
 }
-if grep -nE 'curl[^|]*\|[[:space:]]*sh' "$skill_md" >/dev/null 2>&1; then
-    report_smell "'curl ... | sh' pattern (matches line $(grep -nE 'curl[^|]*\|[[:space:]]*sh' "$skill_md" | head -1 | cut -d: -f1))"
-fi
-if grep -nE 'rm[[:space:]]+-rf' "$skill_md" >/dev/null 2>&1; then
-    report_smell "'rm -rf' (matches line $(grep -nE 'rm[[:space:]]+-rf' "$skill_md" | head -1 | cut -d: -f1))"
-fi
-if grep -nE 'base64[[:space:]]+(-d|--decode)' "$skill_md" >/dev/null 2>&1; then
-    report_smell "base64 decode (matches line $(grep -nE 'base64[[:space:]]+(-d|--decode)' "$skill_md" | head -1 | cut -d: -f1))"
-fi
-if grep -nE 'curl[[:space:]]+(-X[[:space:]]*POST|--data|-d[[:space:]])' "$skill_md" >/dev/null 2>&1; then
-    report_smell "outbound POST via curl (matches line $(grep -nE 'curl[[:space:]]+(-X[[:space:]]*POST|--data|-d[[:space:]])' "$skill_md" | head -1 | cut -d: -f1))"
-fi
+# smell_scan PATTERN -> first "rel-path:line" hit across the scan set, if any.
+smell_scan() {
+    local pat="$1" f hit
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        [[ "$(basename "$f")" == "PROMOTION-CHECKLIST.md" ]] && continue
+        hit=$(grep -nE "$pat" "$f" 2>/dev/null | head -1)
+        if [[ -n "$hit" ]]; then
+            printf '%s:%s\n' "${f#"$skill_dir"/}" "${hit%%:*}"
+            return 0
+        fi
+    done <<< "$scan_files"
+    return 1
+}
+hit=$(smell_scan 'curl[^|]*\|[[:space:]]*sh') \
+    && report_smell "'curl ... | sh' pattern (matches $hit)"
+hit=$(smell_scan 'rm[[:space:]]+-rf') \
+    && report_smell "'rm -rf' (matches $hit)"
+hit=$(smell_scan 'base64[[:space:]]+(-d|--decode)') \
+    && report_smell "base64 decode (matches $hit)"
+hit=$(smell_scan 'curl[[:space:]]+(-X[[:space:]]*POST|--data|-d[[:space:]])') \
+    && report_smell "outbound POST via curl (matches $hit)"
 if (( smells == 0 )); then
     pass "12. no security smells detected"
 fi
@@ -293,24 +375,33 @@ fi
 # ---- Check 13: no secrets (FAIL) --------------------------------------------
 # Lines carrying the opt-in marker 'allowlist secret' (detect-secrets
 # convention, e.g. `<!-- pragma: allowlist secret -->`) are exempt — this lets
-# a security/example skill show realistic key shapes without failing. A genuine
-# accidental leak won't carry the marker, so detection strength is preserved.
+# a security/example skill show realistic key shapes without failing. The
+# pragma works in every scanned file, not just SKILL.md. A genuine accidental
+# leak won't carry the marker, so detection strength is preserved.
 secret_hit=0
-# secret_scan PATTERN -> matching "line:text" rows with allowlisted lines removed.
-secret_scan() { grep -nE "$1" "$skill_md" 2>/dev/null | grep -v 'allowlist secret'; }
+# secret_scan PATTERN -> "rel-path:line:text" rows across the scan set, with
+# allowlisted lines removed.
+secret_scan() {
+    local pat="$1" f
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        grep -nE "$pat" "$f" 2>/dev/null | grep -v 'allowlist secret' \
+            | sed "s|^|${f#"$skill_dir"/}:|"
+    done <<< "$scan_files"
+}
 scan_sk=$(secret_scan '\bsk-[A-Za-z0-9_-]{16,}')
 if [[ -n "$scan_sk" ]]; then
-    fail "13. potential Anthropic-style API key (sk-...) at line $(printf '%s\n' "$scan_sk" | head -1 | cut -d: -f1)"
+    fail "13. potential Anthropic-style API key (sk-...) at $(printf '%s\n' "$scan_sk" | head -1 | cut -d: -f1,2)"
     secret_hit=1
 fi
 scan_ghp=$(secret_scan '\bghp_[A-Za-z0-9]{30,}')
 if [[ -n "$scan_ghp" ]]; then
-    fail "13. potential GitHub personal access token (ghp_...) at line $(printf '%s\n' "$scan_ghp" | head -1 | cut -d: -f1)"
+    fail "13. potential GitHub personal access token (ghp_...) at $(printf '%s\n' "$scan_ghp" | head -1 | cut -d: -f1,2)"
     secret_hit=1
 fi
 scan_akia=$(secret_scan '\bAKIA[0-9A-Z]{16}\b')
 if [[ -n "$scan_akia" ]]; then
-    fail "13. potential AWS access key (AKIA...) at line $(printf '%s\n' "$scan_akia" | head -1 | cut -d: -f1)"
+    fail "13. potential AWS access key (AKIA...) at $(printf '%s\n' "$scan_akia" | head -1 | cut -d: -f1,2)"
     secret_hit=1
 fi
 if (( secret_hit == 0 )); then
@@ -341,13 +432,21 @@ else
     if ! grep -qE '^Last verified:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}' "$tests_md"; then
         fail "14. tests.md is missing a 'Last verified: YYYY-MM-DD' line"
     else
-        # Check 14b: at least 3 scenario headings (H2 sections after the Last-verified line).
-        scenario_count=$(grep -cE '^## ' "$tests_md" || true)
+        # Check 14b: at least 3 scenario headings. Count H2 sections but exclude
+        # structural headings (Contents, Notes, Setup, Prerequisites, Preamble,
+        # Background) — a TOC or notes section is not a scenario and shouldn't
+        # inflate the count.
+        scenario_count=$(grep -E '^## ' "$tests_md" \
+            | grep -cviE '^##[[:space:]]+(table[[:space:]]+of[[:space:]]+contents|toc\b|contents|notes|setup|prerequisites|preamble|background)' || true)
         if (( scenario_count < 3 )); then
             warn "14. tests.md has $scenario_count scenarios (want ≥3: golden/edge/error)"
         else
             # Check 14c: staleness — warn if Last verified is older than 90 days.
-            last_date=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' "$tests_md" | head -1)
+            # Anchor extraction to the 'Last verified:' line itself, not the
+            # first date appearing anywhere in the file (a scenario mentioning
+            # an older date would otherwise skew the staleness math).
+            last_date=$(grep -E '^Last verified:' "$tests_md" | head -1 \
+                | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
             today=$(date +%Y-%m-%d)
             age_days=$($PY -c "
 from datetime import date
@@ -398,7 +497,7 @@ fi
 #   17: a reference file over 100 lines should open with a table of contents, so
 #       Claude sees the full scope even when it previews with a partial read
 #       (Anthropic "Structure longer reference files with table of contents").
-governance_re='^(SKILL|tests|test-prompts|PROMOTION-CHECKLIST|goal|README)\.md$'
+# (governance_re is defined above Check 10 and shared here.)
 oversize=0
 notoc=0
 while IFS= read -r md; do
@@ -491,6 +590,51 @@ while IFS= read -r md; do
 done < <(find "$skill_dir" -type f -name '*.md' | sort)
 if (( orphan == 0 )); then
     pass "20. all reference files are linked from SKILL.md"
+fi
+
+# ---- Check 21: staging/live drift (WARN) -------------------------------------
+# Promoted skills are copies — `cp -r staging/<name> .claude/skills/` — and the
+# staging/ copy is the working record (see CLAUDE.md "Demote rather than fix in
+# place"). If a file that exists in BOTH copies has diverged, someone edited one
+# side without re-syncing. Extra files on either side are fine (staging keeps
+# goal.md and evidence logs; the live copy strips them) — only shared files are
+# compared. Runs only for skills under .claude/skills/.
+if (( in_live == 1 )); then
+    skill_base=$(basename "$(cd "$skill_dir" && pwd)")
+    # Repo root: walk up from the skill dir to the first directory containing
+    # both .claude and staging; fall back to git's toplevel.
+    repo_root=""
+    probe="$(cd "$skill_dir" && pwd)"
+    while [[ -n "$probe" && "$probe" != "/" ]]; do
+        if [[ -d "$probe/.claude" && -d "$probe/staging" ]]; then
+            repo_root="$probe"
+            break
+        fi
+        parent=$(dirname "$probe")
+        [[ "$parent" == "$probe" ]] && break
+        probe="$parent"
+    done
+    if [[ -z "$repo_root" ]]; then
+        repo_root=$(git -C "$skill_dir" rev-parse --show-toplevel 2>/dev/null || true)
+    fi
+    if [[ -z "$repo_root" || ! -d "$repo_root/staging/$skill_base" ]]; then
+        pass "21. no staging twin"
+    else
+        staging_twin="$repo_root/staging/$skill_base"
+        drifted=""
+        while IFS= read -r f; do
+            rel="${f#"$skill_dir"/}"
+            twin="$staging_twin/$rel"
+            if [[ -f "$twin" ]] && ! diff -q "$f" "$twin" >/dev/null 2>&1; then
+                drifted="$drifted $rel"
+            fi
+        done < <(find "$skill_dir" -type f | sort)
+        if [[ -n "$drifted" ]]; then
+            warn "21. diverged from staging/$skill_base in shared files:$drifted — reconcile (the staging copy is the working record)"
+        else
+            pass "21. in sync with staging/$skill_base"
+        fi
+    fi
 fi
 
 # ---- Summary -----------------------------------------------------------------

@@ -41,7 +41,7 @@ Always invoked manually via `/skill-kit:improving-skills`. The skill has
 3. **Score the baseline.** Run
    `score-skill .skill-kit/runs/<run-id>/skill/SKILL.md`
    and record the composite as iteration 0 in `.skill-kit/runs/<run-id>/results.tsv`.
-4. **Run the loop.** See [loop.md](loop.md) for the iteration mechanics
+4. **Run the loop.** See [loop.md](references/loop.md) for the iteration mechanics
    and stopping conditions.
 5. **Value-add check.** When the loop stops, run the value-add test
    (`${CLAUDE_PLUGIN_ROOT}/reference/value-add-test.md`) **once** on the
@@ -53,7 +53,7 @@ Always invoked manually via `/skill-kit:improving-skills`. The skill has
    report. A **FAIL** means the composite gains never reached the user (usually
    scaffolding burying substance) — recommend the substance-first remedy and do
    **not** call the skill done. This runs once at loop end, never per-iteration
-   (it spawns ~4N sub-agents). See [scoring.md](scoring.md) → "What the composite
+   (it spawns ~4N sub-agents). See [scoring.md](references/scoring.md) → "What the composite
    does NOT measure".
 6. **Report.** Summarize: starting score, best score, number of iterations,
    what changed in the winning candidate, and the value-add verdict. Point the
@@ -97,7 +97,7 @@ After the loop stops, emit:
 
 ## Details
 
-- Loop mechanics, retry behavior, stopping conditions: [loop.md](loop.md)
-- Scoring composite and how to interpret results.tsv: [scoring.md](scoring.md)
+- Loop mechanics, retry behavior, stopping conditions: [loop.md](references/loop.md)
+- Scoring composite and how to interpret results.tsv: [scoring.md](references/scoring.md)
 - Empirical trigger measurement (real firing vs simulated prediction):
   `${CLAUDE_PLUGIN_ROOT}/reference/trigger-accuracy.md`

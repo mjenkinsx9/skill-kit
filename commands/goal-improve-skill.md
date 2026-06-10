@@ -109,6 +109,7 @@ The improving-skills loop will see <skill-dir>/goal.md and can seed .skill-kit/r
 ## Constraints
 
 - Do NOT start the improving-skills loop yourself — print the lines for the user.
+- `/goal` is not part of this plugin or stock Claude Code — it comes from the user's own environment. If their environment has no `/goal` command, say so in the printed output and tell them the written goal.md serves as the acceptance checklist to work against manually.
 - Do NOT modify SKILL.md, tests.md, or test-prompts.md.
 - Do NOT invent baseline numbers. If the token estimate is rough, say so.
 - If the user's numeric target in Q2 is unmeasurable from the conversation (e.g. "make it feel sharper"), push back once for a concrete metric the `/goal` evaluator can judge.

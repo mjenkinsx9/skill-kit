@@ -6,7 +6,7 @@ description: Interview the author and write a goal.md sidecar that anchors a new
 
 The user invoked `/goal-new-skill $ARGUMENTS`. They want to anchor a not-yet-written skill with a measurable `/goal` condition so the work toward "skill exists and passes the harness" is driven by a verifiable end state, not vibes.
 
-This command **does not write SKILL.md or tests.md**. Those come from the manual practice runs CLAUDE.md mandates. This command writes a single artifact — `.claude/skills/<name>/goal.md` — and prints the `/goal` line for the user to invoke separately.
+This command **does not write SKILL.md or tests.md**. Those come from manual practice runs — the skill-kit workflow codifies skills from real, hand-executed runs, never from imagination. This command writes a single artifact — `.claude/skills/<name>/goal.md` — and prints the `/goal` line for the user to invoke separately.
 
 ## Steps
 
@@ -14,7 +14,7 @@ This command **does not write SKILL.md or tests.md**. Those come from the manual
    - `$ARGUMENTS` should be a kebab-case skill name in gerund form (e.g. `summarizing-prs`, `triaging-issues`).
    - If empty, ask: "What's the skill name? (kebab-case, prefer gerund form like `processing-pdfs`.)"
    - If it contains uppercase, spaces, or fails `^[a-z0-9-]+$`, push back and ask for a fix.
-   - If the first hyphen-separated segment doesn't end in `-ing`, point that out (CLAUDE.md prefers gerunds) but accept the user's call.
+   - If the first hyphen-separated segment doesn't end in `-ing`, point that out (gerund-form names are the skill-kit convention; the check-skill harness warns otherwise) but accept the user's call.
    - Set `<name>` to the validated value for the rest of this run.
 
 2. **Check for existing artifacts.**
@@ -107,4 +107,5 @@ The first practice run begins as soon as you invoke /goal. Edit goal.md and re-r
 
 - Do NOT write SKILL.md, tests.md, or any other skill file. The goal anchors future work; it does not do that work.
 - Do NOT invoke `/goal` yourself — slash commands cannot call other slash commands. Print the line so the user runs it.
+- `/goal` is not part of this plugin or stock Claude Code — it comes from the user's own environment. If their environment has no `/goal` command, say so in the printed output and tell them the written goal.md serves as the acceptance checklist to work against manually.
 - If the user's answers are too vague to synthesize a measurable condition (e.g. Q2 = "good output"), push back once with a specific request for concreteness before accepting.
