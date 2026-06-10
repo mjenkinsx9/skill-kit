@@ -1,11 +1,11 @@
 # Promotion Checklist — improving-skills
 
 **Skill**: improving-skills (live tool skill; `disable-model-invocation: true`)
-**Location**: `plugins/skill-kit/skills/improving-skills/`
+**Location**: `skills/improving-skills/`
 
 ## Pre-promotion verification
 
-- [x] `check-skill plugins/skill-kit/skills/improving-skills` → 0 FAIL
+- [x] `check-skill skills/improving-skills` → 0 FAIL
 - [x] `tests.md` present with scenarios + `Last verified:` date
 - [x] Sidecars (`references/loop.md`, `references/scoring.md`, `value-add` references, `templates/`) referenced one level deep; helper scripts live in the plugin `bin/` (`check-skill`, `score-skill`, `token-count`)
 - [x] No secrets; `allowed-tools` scoped intentionally

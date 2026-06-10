@@ -7,7 +7,7 @@
   "author": {
     "name": "mjenkinsx9"
   },
-  "homepage": "https://github.com/mjenkinsx9/mjenkins-toolbox",
-  "repository": "https://github.com/mjenkinsx9/mjenkins-toolbox",
+  "homepage": "https://github.com/mjenkinsx9/skill-kit",
+  "repository": "https://github.com/mjenkinsx9/skill-kit",
   "keywords": ["skills", "agent-skills", "authoring", "evaluation", "claude-code"]
 }

@@ -1,0 +1,9 @@
+# skill-kit run artifacts (written to consuming projects; ignore locally just in case)
+.skill-kit/
+
+# python
+__pycache__/
+*.pyc
+
+# local tool config
+.serena/

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# run-self-tests.sh — self-test suite for plugins/skill-kit/bin/check-skill.
+# run-self-tests.sh — self-test suite for bin/check-skill.
 #
 # Runs the static harness against the pathological fixture skills under
-# plugins/skill-kit/tests/fixtures/ and asserts, per fixture: (a) the expected
+# tests/fixtures/ and asserts, per fixture: (a) the expected
 # exit code, (b) presence of the specific expected PASS/WARN/FAIL lines, (c)
 # absence of unexpected FAILs. Prints one PASS/FAIL line per fixture plus a
 # summary.
 #
 # Contract:
-#   bash plugins/skill-kit/tests/run-self-tests.sh
+#   bash tests/run-self-tests.sh
 #                                            # from the repo root (any cwd works:
 #                                            # the script cd's to the repo root)
 #   exit 0  -> every fixture behaved as asserted
@@ -26,11 +26,11 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 
-HARNESS="plugins/skill-kit/bin/check-skill"
-FIXTURES="plugins/skill-kit/tests/fixtures"
+HARNESS="bin/check-skill"
+FIXTURES="tests/fixtures"
 
 if [[ ! -f "$HARNESS" ]]; then
     echo "error: $HARNESS not found (expected to run inside the mjenkins-toolbox repo)" >&2

@@ -35,7 +35,7 @@ multi-dir sweeps. New dev-bench eval tools default to "port it" (see
 From the plugin repo root, with the dev-bench checked out as a sibling:
 
 ```bash
-DB=../skill-testing PK=plugins/skill-kit
+DB=../skill-testing PK=.
 for pair in \
   "eval/check-skill.sh:$PK/bin/check-skill" \
   "eval/value-add-test.sh:$PK/bin/value-add-test" \
@@ -54,7 +54,7 @@ Anything else is drift — port it (or document a new intentional divergence
 here). Then run the gates locally before tagging:
 
 ```bash
-bash plugins/skill-kit/bin/check-skill plugins/skill-kit/skills/improving-skills  # 0 FAIL, 0 WARN
-bash plugins/skill-kit/tests/run-self-tests.sh
-python -m pytest plugins/skill-kit/tests -q
+bash bin/check-skill skills/improving-skills  # 0 FAIL, 0 WARN
+bash tests/run-self-tests.sh
+python -m pytest tests -q
 ```

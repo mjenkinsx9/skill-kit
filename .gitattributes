@@ -1,0 +1,4 @@
+# Normalize all text to LF in the repo, and force LF in working copies on every
+# platform. The bin/ scripts run under bash on consumers' machines (incl. macOS/
+# Linux); a CRLF checkout would break their shebangs.
+* text=auto eol=lf

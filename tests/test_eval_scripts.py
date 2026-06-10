@@ -2,7 +2,7 @@
 
 Run from the repo root:
 
-    python -m pytest plugins/skill-kit/tests -q
+    python -m pytest tests -q
 
 Both scripts are pure stdlib and have no package (their filenames are
 extensionless bin/ executables), so they are loaded via
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-BIN_DIR = Path(__file__).resolve().parents[1] / "bin"  # .../plugins/skill-kit/bin
+BIN_DIR = Path(__file__).resolve().parents[1] / "bin"  # .../bin
 
 
 def _load(mod_name: str, filename: str):
