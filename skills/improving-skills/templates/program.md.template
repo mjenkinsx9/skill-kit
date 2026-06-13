@@ -40,6 +40,14 @@ Free-form. Anything the agent should know that isn't captured above —
 context about the skill's intended user, terms to prefer/avoid, examples
 of what "better" looks like.
 
+If the target's `references/learnings.md` has a "Retro log", paste its
+`Status: open` entries here as a candidate-edit backlog — real-run
+observations the author flagged. They are candidates to try first, not
+mandates: each must still pass the harness and raise the composite to survive.
+
 ```
 <your notes>
+
+### Candidate edits from references/learnings.md retro log (open)
+<paste open entries, or "none">
 ```

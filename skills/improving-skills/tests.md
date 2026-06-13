@@ -9,7 +9,7 @@ N/A (format-compliance target) and empirical trigger-accuracy was not
 measurable (the target skill was not in the session's live registry — its
 documented prerequisite). Re-verify after a true marketplace install.
 
-Last verified: 2026-06-10
+Last verified: 2026-06-13
 
 ## Golden path: tighten an existing skill
 
@@ -36,6 +36,36 @@ on the scratch branch. Loop stopped at the cap; final `results.tsv` rows
 matched the documented format byte-for-byte. One protocol note: small-model
 judges sometimes returned prose instead of the mandated single integer —
 the mean was extractable, but enforce the reply format in judge prompts.
+
+## Learnings-seeding: open retro entries drive candidate edits
+
+**Input:** `/skill-kit:improving-skills .claude/skills/<name>/SKILL.md`, where
+the target ships a `references/learnings.md` with a "Retro log" of `Status: open`
+entries (real-run observations flagged for review — e.g. an over-broad description
+catch-all, a duplicated step, a filler intro, and an empty-input quality bug).
+
+**Expected behavior:**
+1. Step 2 reads `references/learnings.md` and folds the open entries into
+   `.skill-kit/runs/<run-id>/program.md` as a "Candidate edits from … retro log"
+   backlog.
+2. The loop tries the seeded edits first, scores each, and keeps only the
+   composite-raising ones — candidates, not mandates: a flagged edit that
+   doesn't raise the composite is reverted, not blindly applied.
+3. Emits a summary citing baseline vs best composite and the kept edits.
+
+**Verified output (2026-06-13, dev-bench run `2026-06-13-1554`; capped at 3
+iters, simulated trigger, scoring sub-agents on haiku):**
+- `program.md` seeded with all 4 open entries as the candidate backlog.
+- iter 0 baseline composite **0.893** (trigger 1.00, quality 0.73, eff 1.00).
+- iter 1 *tighten description* → **reverted**: trigger judge already declined
+  the negatives, so removing the catch-all left composite flat at 0.893.
+  Confirms seeded edits aren't applied blindly.
+- iter 2 *add empty-input handling* → **kept**: quality 2/10→7/10, composite
+  0.893→**0.953**.
+- iter 3 *remove duplicated step + section* → **kept**: efficiency
+  0.963→1.00, composite 0.953→**0.960**.
+- Note: run used a dev-bench fixture (`staging/writing-release-notes`); verify
+  with a real plugin-installed skill once available.
 
 ## Edge case: missing test-prompts.md
 
