@@ -34,6 +34,12 @@ Always invoked manually via `/skill-kit:improving-skills`. The skill has
    - `eval.json` — scoring config (paths, weights, iteration cap)
    - `test-prompts.md` — positive + negative trigger fixtures (drives the
      trigger-accuracy dimension)
+   If `<skill-dir>/references/learnings.md` exists and carries a "Retro log"
+   of observations from real runs, read it and fold its `Status: open` entries
+   into `program.md`'s "Notes for the agent" as a candidate-edit backlog —
+   these are the human-flagged improvements the loop should try first. Treat
+   them as candidates, not mandates: each must still pass the harness and
+   raise the composite to be kept, and any unhelpful entry is just reverted.
    Verify the target ships a `tests.md` sidecar with ≥3 scenarios — the
    quality dimension scores candidates against those scenarios. If
    `test-prompts.md` or `tests.md` is missing/empty, stop and ask the

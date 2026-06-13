@@ -22,7 +22,11 @@ Repeat until a stopping condition fires:
 1. **Read state.** Read the current `.skill-kit/runs/<run-id>/skill/SKILL.md` and the
    most recent rows of `results.tsv` to know what's been tried.
 2. **Propose ONE change.** Pick a single improvement based on `program.md`
-   goals. Examples of valid focused changes:
+   goals — and, when present, the open candidate edits seeded from the
+   target's `references/learnings.md` retro log (real-run observations the
+   author flagged for review). Prefer a learnings-backed edit when one is open
+   and still fits the run's goals; it carries real-use evidence behind it.
+   Examples of valid focused changes:
    - Tighten the `description` to better match firing/non-firing prompts
    - Replace a verbose paragraph with a 2-bullet summary
    - Promote a frequently-needed reference into the body (and remove the
