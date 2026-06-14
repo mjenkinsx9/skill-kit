@@ -1,6 +1,6 @@
 {
   "name": "skill-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
   "description": "Author, evaluate, security-review, and autonomously improve Claude Agent Skills. Bundles the skill-building workflow as the improving-skills autoresearch loop, goal-setting commands, reference protocols, and the static eval harness.",
   "author": {
@@ -9,5 +9,20 @@
   "homepage": "https://github.com/mjenkinsx9/skill-kit",
   "repository": "https://github.com/mjenkinsx9/skill-kit",
   "keywords": ["skills", "agent-skills", "authoring", "evaluation"],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Skill Kit",
+    "shortDescription": "Author, evaluate, and improve agent skills.",
+    "longDescription": "Skill Kit packages the improving-skills workflow and static harness so Codex can help author, evaluate, security-review, and iterate on Agent Skills with evidence.",
+    "developerName": "mjenkinsx9",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": [
+      "Review this skill with Skill Kit.",
+      "Improve this Agent Skill.",
+      "Run the skill-quality checklist."
+    ],
+    "websiteURL": "https://github.com/mjenkinsx9/skill-kit",
+    "brandColor": "#2563EB"
+  }
 }
