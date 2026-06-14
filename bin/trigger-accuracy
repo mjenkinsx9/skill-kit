@@ -2,24 +2,36 @@
 """Deterministic helpers for the in-session empirical trigger-accuracy harness.
 
 The harness measures whether a skill *actually* fires (the model calls the Skill
-tool) on its positive fixture prompts and declines on its negatives — ground
-truth, versus the simulated "would you fire?" self-prediction the improving-skills
-loop uses today. See ${CLAUDE_PLUGIN_ROOT}/reference/trigger-accuracy.md for the full orchestrator procedure.
+tool or loads the target SKILL.md) on its positive fixture prompts and declines
+on its negatives — ground truth, versus the simulated "would you fire?"
+self-prediction the improving-skills loop uses today. See
+${CLAUDE_PLUGIN_ROOT}/reference/trigger-accuracy.md for the full orchestrator
+procedure.
 
 This script does only the parts a script can do deterministically:
   parse-prompts <test-prompts.md>     parse y|/n| fixtures -> JSON
   detect <agent.jsonl> --skill NAME   did this one transcript fire the skill?
-  score  <runs.json>   --skill NAME   detect every run + aggregate -> JSON contract
+  score  <runs.json>   --skill NAME   detect Claude agentId runs + aggregate
+  score-transcripts <runs.json> --skill NAME
+                                      detect explicit Pi/Codex/etc transcript paths
+  run-probes <skill-dir> --runner pi|codex
+                                      spawn fresh Pi/Codex read-only probes,
+                                      collect transcripts, and score them
 
-The orchestrator (Claude, following the .md) does the part a script cannot: spawn
-one Agent sub-agent per prompt-run with the raw prompt, collect each agentId, and
-hand them to `score`. Pure stdlib — no third-party deps.
+The orchestrator usually does the expensive part: spawn or run one fresh agent
+session per prompt-run with the raw prompt, collect either Claude agentIds or
+portable transcript paths, and hand them to `score` / `score-transcripts`. For
+Pi and Codex, `run-probes` can do that spawning directly. Pure stdlib — no
+third-party deps.
 """
 
 import argparse
 import json
 import re
+import shlex
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 CLI_VERSION_TESTED = "2.1.159"  # claude CLI the detection schema was validated against
@@ -50,19 +62,110 @@ def parse_prompts(path: Path) -> list[dict]:
     return rows
 
 
-def _tool_uses(transcript: Path):
-    """Yield (tool_name, input_dict) for every tool_use block in a sub-agent transcript."""
+def _coerce_args(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
+    return {}
+
+
+def _iter_content_tool_blocks(content):
+    blocks = content if isinstance(content, list) else [content]
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type")
+        if block_type in {"tool_use", "toolUse", "toolCall"}:
+            yield block.get("name"), _coerce_args(
+                block.get("input") or block.get("arguments") or {})
+        elif block_type in {"function_call", "functionCall"}:
+            yield block.get("name"), _coerce_args(block.get("arguments") or {})
+
+
+def _iter_chat_tool_calls(container: dict):
+    tool_calls = container.get("tool_calls") or container.get("toolCalls") or []
+    if not isinstance(tool_calls, list):
+        return
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            continue
+        fn = call.get("function") if isinstance(call.get("function"), dict) else {}
+        name = fn.get("name") or call.get("name")
+        raw_args = fn.get("arguments") or call.get("arguments") or {}
+        yield name, _coerce_args(raw_args)
+
+
+def _text_chunks(transcript: Path):
     for line in transcript.read_text(encoding="utf-8").splitlines():
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(obj, dict):
+            continue
+        item = obj.get("item") if isinstance(obj.get("item"), dict) else None
+        if item and isinstance(item.get("text"), str):
+            yield item["text"]
         msg = obj.get("message") if isinstance(obj.get("message"), dict) else None
-        content = msg.get("content") if msg else obj.get("content")
-        if isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
-                    yield block.get("name"), (block.get("input") or {})
+        for content in (obj.get("content"), msg.get("content") if msg else None):
+            blocks = content if isinstance(content, list) else [content]
+            for block in blocks:
+                if isinstance(block, str):
+                    yield block
+                elif isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        yield text
+
+
+def _text_signal_fired(transcript: Path, skill: str) -> bool:
+    skill_re = re.escape(skill.lower())
+    text = "\n".join(_text_chunks(transcript)).lower()
+    if not text:
+        return False
+    patterns = [
+        rf"\b(using|use|loading|load|invoking|invoke|selected|select)\b[^\n.]*`?{skill_re}`?",
+        rf"`{skill_re}`[^\n.]*\b(workflow|skill)\b",
+    ]
+    negative = rf"\b(not|don't|do not|without)\b[^\n.]*`?{skill_re}`?"
+    if re.search(negative, text):
+        return False
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _tool_uses(transcript: Path):
+    """Yield (tool_name, input_dict) for every supported transcript tool call.
+
+    Supports Claude sub-agent transcripts (`tool_use`), Pi session files
+    (`toolCall` blocks), and OpenAI/Codex-style `tool_calls` or top-level
+    `function_call` blocks. Unknown JSON lines are ignored.
+    """
+    for line in transcript.read_text(encoding="utf-8").splitlines():
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("type") in {"tool_execution_start", "tool_execution_end"}:
+            yield obj.get("toolName"), _coerce_args(obj.get("args") or {})
+        msg = obj.get("message") if isinstance(obj.get("message"), dict) else None
+        for name, inp in _iter_content_tool_blocks(obj):
+            yield name, inp
+        for name, inp in _iter_content_tool_blocks(obj.get("content")):
+            yield name, inp
+        for name, inp in _iter_chat_tool_calls(obj):
+            yield name, inp
+        for name, inp in _iter_content_tool_blocks(msg.get("content") if msg else None):
+            yield name, inp
+        if msg:
+            for name, inp in _iter_chat_tool_calls(msg):
+                yield name, inp
 
 
 def resolve_transcript(agent_id: str) -> Path | None:
@@ -72,7 +175,8 @@ def resolve_transcript(agent_id: str) -> Path | None:
     return matches[0] if matches else None
 
 
-def detect_fire(transcript: Path, skill: str, skill_md: str | None = None) -> dict:
+def detect_fire(transcript: Path, skill: str, skill_md: str | None = None,
+                text_signal: bool = False) -> dict:
     """Decide whether `transcript` fired the target skill.
 
     fired           target Skill(skill=NAME) called, or a Read of its SKILL.md (fallback)
@@ -80,25 +184,37 @@ def detect_fire(transcript: Path, skill: str, skill_md: str | None = None) -> di
     """
     if not transcript or not transcript.is_file():
         return {"fired": False, "other_skill_fired": None, "error": "transcript-not-found"}
+    if transcript.stat().st_size == 0:
+        return {"fired": False, "other_skill_fired": None, "error": "empty-transcript"}
     skill_md_norm = skill_md.replace("\\", "/").lower() if skill_md else None
     fired = False
     other = None
     for name, inp in _tool_uses(transcript):
-        if name == "Skill":
+        tool = (name or "").strip()
+        tool_l = tool.lower()
+        if tool == "Skill" or tool_l.endswith(".skill"):
             invoked = (inp.get("skill") or "").strip()
             # Accept exact or namespaced suffix match (e.g. "plugin:reviewing-x").
             if invoked == skill or invoked.endswith(":" + skill):
                 fired = True
             elif invoked and other is None:
                 other = invoked
-        elif name == "Read" and skill_md_norm:
-            fp = (inp.get("file_path") or "").replace("\\", "/").lower()
+        elif skill_md_norm and (tool_l == "read" or tool_l.endswith(".read")):
+            raw_path = (
+                inp.get("file_path") or inp.get("filePath") or inp.get("path")
+                or inp.get("filename") or inp.get("file") or ""
+            )
+            fp = str(raw_path).replace("\\", "/").lower()
             if fp.endswith(skill_md_norm) or fp == skill_md_norm:
                 fired = True
+    if not fired and text_signal and _text_signal_fired(transcript, skill):
+        fired = True
     return {"fired": fired, "other_skill_fired": other, "error": None}
 
 
-def score(runs: list[dict], skill: str, skill_md: str | None, threshold: float) -> dict:
+def _score_with_resolver(runs: list[dict], skill: str, skill_md: str | None,
+                         threshold: float, resolver, mechanism: str,
+                         text_signal: bool = False) -> dict:
     """Detect every run and aggregate into the trigger-accuracy contract."""
     prompt_results = []
     tp = fp = tn = fn = inconclusive = 0
@@ -108,8 +224,8 @@ def score(runs: list[dict], skill: str, skill_md: str | None, threshold: float) 
         fired_count = errors = 0
         stealers = []
         run_total = 0
-        for agent_id in entry.get("agent_ids", []):
-            res = detect_fire(resolve_transcript(agent_id), skill, skill_md)
+        for transcript in resolver(entry):
+            res = detect_fire(transcript, skill, skill_md, text_signal)
             if res["error"]:
                 errors += 1
                 continue
@@ -148,8 +264,9 @@ def score(runs: list[dict], skill: str, skill_md: str | None, threshold: float) 
     accuracy = (tp + tn) / n if n else 0.0
     return {
         "skill": skill,
-        "mechanism": "in-session-installed",
+        "mechanism": mechanism,
         "threshold": threshold,
+        "text_signal": text_signal,
         "cli_version_tested": CLI_VERSION_TESTED,
         "prompts": prompt_results,
         "aggregate": {
@@ -159,6 +276,168 @@ def score(runs: list[dict], skill: str, skill_md: str | None, threshold: float) 
             "accuracy": round(accuracy, 3), "trigger": round(accuracy, 3),
         },
     }
+
+
+def score(runs: list[dict], skill: str, skill_md: str | None, threshold: float,
+          text_signal: bool = False) -> dict:
+    return _score_with_resolver(
+        runs, skill, skill_md, threshold,
+        lambda entry: [resolve_transcript(agent_id)
+                       for agent_id in entry.get("agent_ids", [])],
+        "in-session-installed",
+        text_signal,
+    )
+
+
+def score_transcripts(runs: list[dict], skill: str, skill_md: str | None,
+                      threshold: float, text_signal: bool = False) -> dict:
+    return _score_with_resolver(
+        runs, skill, skill_md, threshold,
+        lambda entry: [Path(path) for path in entry.get("transcripts", [])],
+        "transcript-paths",
+        text_signal,
+    )
+
+
+PROBE_NOTE = (
+    "[Trigger-probe harness: respond to the request above as you normally would. "
+    "You do NOT need to complete it — once you've taken your first concrete "
+    "step (for example, loading a relevant skill or making your first tool "
+    "call), you may stop.]"
+)
+
+
+def _skill_name_from_dir(skill_dir: Path) -> str:
+    md = skill_dir / "SKILL.md"
+    if not md.is_file():
+        sys.exit(f"error: no SKILL.md found in {skill_dir}")
+    text = md.read_text(encoding="utf-8")
+    m = re.search(r"^name:\s*['\"]?([^'\"\n]+)", text, re.MULTILINE)
+    return m.group(1).strip() if m else skill_dir.name
+
+
+def _select_rows(rows: list[dict], max_prompts: int | None, balanced: bool) -> list[dict]:
+    if max_prompts is None or max_prompts >= len(rows):
+        return rows
+    if not balanced:
+        return rows[:max_prompts]
+    positives = [r for r in rows if r["should_fire"]]
+    negatives = [r for r in rows if not r["should_fire"]]
+    selected = []
+    while len(selected) < max_prompts and (positives or negatives):
+        if positives and len(selected) < max_prompts:
+            selected.append(positives.pop(0))
+        if negatives and len(selected) < max_prompts:
+            selected.append(negatives.pop(0))
+    return selected
+
+
+def _probe_argv(runner: str, prompt: str, skill_dir: Path, cwd: Path,
+                isolated: bool) -> list[str]:
+    if runner == "pi":
+        argv = [
+            "pi", "--mode", "json", "--no-session", "--approve",
+            "--no-extensions", "--no-prompt-templates", "--no-context-files",
+            "--tools", "read",
+        ]
+        if isolated:
+            argv.append("--no-skills")
+        argv.extend(["--skill", str(skill_dir), prompt])
+        return argv
+    if runner == "codex":
+        return [
+            "codex", "exec", "--json", "--sandbox", "read-only",
+            "-C", str(cwd), prompt,
+        ]
+    raise ValueError(f"unknown runner {runner!r}")
+
+
+def _run_probes(args) -> dict:
+    skill_dir = Path(args.skill).resolve()
+    prompts_file = skill_dir / "test-prompts.md"
+    rows = _select_rows(parse_prompts(prompts_file), args.max_prompts, args.balanced)
+    skill_name = args.skill_name or _skill_name_from_dir(skill_dir)
+    cwd = Path(args.cwd).resolve()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    out_dir = Path(args.out_dir or f".skill-kit/runs/trigger-{skill_name}-{stamp}").resolve()
+    transcript_dir = out_dir / "transcripts"
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+
+    runs_by_prompt = [
+        {"prompt": row["prompt"], "should_fire": row["should_fire"], "transcripts": []}
+        for row in rows
+    ]
+    probe_records = []
+    for i, row in enumerate(rows, start=1):
+        prompt = f"{row['prompt']}\n\n{PROBE_NOTE}"
+        for run_index in range(1, args.runs + 1):
+            stem = f"{args.runner}-p{i:02d}-r{run_index:02d}"
+            transcript = transcript_dir / f"{stem}.jsonl"
+            stderr_path = transcript_dir / f"{stem}.stderr"
+            argv = _probe_argv(args.runner, prompt, skill_dir, cwd, args.isolated)
+            record = {
+                "prompt": row["prompt"],
+                "should_fire": row["should_fire"],
+                "run": run_index,
+                "transcript": str(transcript),
+                "stderr": str(stderr_path),
+                "argv": argv,
+            }
+            if args.dry_run:
+                print(" ".join(shlex.quote(part) for part in argv))
+                probe_records.append({**record, "exit": None, "dry_run": True})
+                continue
+            with transcript.open("w", encoding="utf-8") as out, stderr_path.open(
+                    "w", encoding="utf-8") as err:
+                try:
+                    proc = subprocess.run(
+                        argv, cwd=str(cwd), stdout=out, stderr=err,
+                        stdin=subprocess.DEVNULL, encoding="utf-8",
+                        errors="replace", timeout=args.timeout)
+                    exit_code = proc.returncode
+                    timed_out = False
+                except subprocess.TimeoutExpired as e:
+                    exit_code = None
+                    timed_out = True
+                    err.write(f"TIMEOUT after {args.timeout}s\n{e}\n")
+            runs_by_prompt[i - 1]["transcripts"].append(str(transcript))
+            probe_records.append({
+                **record,
+                "exit": exit_code,
+                "timed_out": timed_out,
+                "dry_run": False,
+            })
+
+    runs_path = out_dir / "runs.json"
+    runs_path.write_text(json.dumps(runs_by_prompt, indent=2), encoding="utf-8")
+    probes_path = out_dir / "probes.json"
+    probes_path.write_text(json.dumps(probe_records, indent=2), encoding="utf-8")
+    if args.dry_run:
+        return {
+            "skill": skill_name,
+            "runner": args.runner,
+            "dry_run": True,
+            "runs_file": str(runs_path),
+            "probes_file": str(probes_path),
+            "probes": probe_records,
+        }
+
+    skill_md = args.skill_md or str((skill_dir / "SKILL.md").resolve())
+    result = score_transcripts(
+        runs_by_prompt, skill_name, skill_md, args.threshold, args.text_signal)
+    result.update({
+        "runner": args.runner,
+        "runs_file": str(runs_path),
+        "probes_file": str(probes_path),
+        "out_dir": str(out_dir),
+        "probe_exits": [{
+            "transcript": p["transcript"],
+            "exit": p["exit"],
+            "timed_out": p["timed_out"],
+        } for p in probe_records],
+    })
+    (out_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return result
 
 
 def _summary(result: dict) -> str:
@@ -193,12 +472,52 @@ def main():
     p_detect.add_argument("transcript")
     p_detect.add_argument("--skill", required=True)
     p_detect.add_argument("--skill-md", default=None)
+    p_detect.add_argument("--text-signal", action="store_true",
+                          help="also accept textual self-report of using the skill")
 
-    p_score = sub.add_parser("score", help="detect every run in runs.json and aggregate")
+    p_score = sub.add_parser("score", help="detect every Claude agentId run and aggregate")
     p_score.add_argument("runs_file", help="JSON: [{prompt, should_fire, agent_ids:[...]}]")
     p_score.add_argument("--skill", required=True)
     p_score.add_argument("--skill-md", default=None)
     p_score.add_argument("--threshold", type=float, default=0.5)
+    p_score.add_argument("--text-signal", action="store_true",
+                         help="also accept textual self-report of using the skill")
+
+    p_score_t = sub.add_parser(
+        "score-transcripts",
+        help="detect every explicit transcript path run and aggregate (Pi/Codex/etc)")
+    p_score_t.add_argument(
+        "runs_file", help="JSON: [{prompt, should_fire, transcripts:[...]}]")
+    p_score_t.add_argument("--skill", required=True)
+    p_score_t.add_argument("--skill-md", default=None)
+    p_score_t.add_argument("--threshold", type=float, default=0.5)
+    p_score_t.add_argument("--text-signal", action="store_true",
+                           help="also accept textual self-report of using the skill")
+
+    p_probe = sub.add_parser(
+        "run-probes",
+        help="spawn fresh read-only Pi/Codex probes, collect transcripts, and score")
+    p_probe.add_argument("skill", help="skill directory containing SKILL.md and test-prompts.md")
+    p_probe.add_argument("--runner", choices=["pi", "codex"], required=True)
+    p_probe.add_argument("--runs", type=int, default=1, help="runs per prompt")
+    p_probe.add_argument("--cwd", default=".", help="working directory for the runner")
+    p_probe.add_argument("--out-dir", default=None, help="output directory for transcripts/results")
+    p_probe.add_argument("--timeout", type=int, default=180, help="per-probe timeout in seconds")
+    p_probe.add_argument("--threshold", type=float, default=0.5)
+    p_probe.add_argument("--max-prompts", type=int, default=None,
+                         help="limit prompt count for smoke tests")
+    p_probe.add_argument("--balanced", action="store_true",
+                         help="when limiting prompts, alternate positives and negatives")
+    p_probe.add_argument("--isolated", action="store_true",
+                         help="Pi only: disable discovered skills and load only --skill")
+    p_probe.add_argument("--skill-name", default=None,
+                         help="override skill name used for scoring")
+    p_probe.add_argument("--skill-md", default=None,
+                         help="skill path suffix to detect as a fire")
+    p_probe.add_argument("--text-signal", action="store_true",
+                         help="also accept textual self-report of using the skill")
+    p_probe.add_argument("--dry-run", action="store_true",
+                         help="print probe commands without running live agents")
 
     args = ap.parse_args()
 
@@ -206,11 +525,30 @@ def main():
         print(json.dumps(parse_prompts(Path(args.prompts_file)), indent=2))
     elif args.cmd == "detect":
         t = Path(args.transcript)
-        print(json.dumps(detect_fire(t, args.skill, args.skill_md), indent=2))
+        print(json.dumps(detect_fire(
+            t, args.skill, args.skill_md, args.text_signal), indent=2))
     elif args.cmd == "score":
         runs = json.loads(Path(args.runs_file).read_text(encoding="utf-8"))
-        result = score(runs, args.skill, args.skill_md, args.threshold)
+        result = score(
+            runs, args.skill, args.skill_md, args.threshold, args.text_signal)
         print(_summary(result), file=sys.stderr)
+        print(json.dumps(result, indent=2))
+    elif args.cmd == "score-transcripts":
+        runs = json.loads(Path(args.runs_file).read_text(encoding="utf-8"))
+        result = score_transcripts(
+            runs, args.skill, args.skill_md, args.threshold, args.text_signal)
+        print(_summary(result), file=sys.stderr)
+        print(json.dumps(result, indent=2))
+    elif args.cmd == "run-probes":
+        if args.runs < 1:
+            sys.exit("error: --runs must be >= 1")
+        if args.max_prompts is not None and args.max_prompts < 1:
+            sys.exit("error: --max-prompts must be >= 1")
+        if args.runner != "pi" and args.isolated:
+            sys.exit("error: --isolated is currently only supported for --runner pi")
+        result = _run_probes(args)
+        if not args.dry_run:
+            print(_summary(result), file=sys.stderr)
         print(json.dumps(result, indent=2))
 
 
