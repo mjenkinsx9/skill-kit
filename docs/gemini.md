@@ -18,7 +18,7 @@ is **auto-discovered** — no manifest field points at it. So the portable core,
 Claude Code. The manifest only needs the identifying fields:
 
 ```json
-{ "name": "skill-kit", "version": "0.2.1", "description": "…" }
+{ "name": "skill-kit", "version": "0.2.2", "description": "…" }
 ```
 
 `name` and `version` are the required fields; `description` is for display.

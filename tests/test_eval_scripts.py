@@ -15,6 +15,9 @@ monkeypatched onto tmp_path fixtures.
 import importlib.machinery
 import importlib.util
 import json
+import os
+import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -321,6 +324,63 @@ class TestDetectFire:
 
 
 # ---- trigger-accuracy: score ---------------------------------------------------
+
+
+class TestPathShims:
+    def test_agent_workflow_shims_are_executable_and_resolve_repo_root(self):
+        expected = {
+            "improving-skills": (
+                BIN_DIR.parent / "skills" / "improving-skills" / "SKILL.md"
+            ),
+            "goal-new-skill": BIN_DIR.parent / "commands" / "goal-new-skill.md",
+            "goal-improve-skill": (
+                BIN_DIR.parent / "commands" / "goal-improve-skill.md"
+            ),
+        }
+        env = os.environ.copy()
+        env["CLAUDE_PLUGIN_ROOT"] = str(BIN_DIR.parent / "not-the-plugin-root")
+        env["SKILL_KIT_ROOT"] = str(BIN_DIR.parent / "also-not-the-plugin-root")
+        for name, path in expected.items():
+            mode = (BIN_DIR / name).stat().st_mode
+            assert mode & stat.S_IXUSR, f"{name} must be executable"
+            res = subprocess.run(
+                [str(BIN_DIR / name), "--path"],
+                check=True,
+                text=True,
+                capture_output=True,
+                env=env,
+            )
+            assert res.stdout.strip() == str(path)
+
+    def test_value_add_test_falls_back_to_script_root_without_claude_env(self, tmp_path):
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: Test skill.\n---\n",
+            encoding="utf-8",
+        )
+        (skill / "test-prompts.md").write_text(
+            "y | first positive\ny | second positive\ny | third positive\n",
+            encoding="utf-8",
+        )
+        project = tmp_path / "project"
+        project.mkdir()
+        env = os.environ.copy()
+        env.pop("CLAUDE_PLUGIN_ROOT", None)
+        env.pop("SKILL_KIT_ROOT", None)
+        env["CLAUDE_PROJECT_DIR"] = str(project)
+        res = subprocess.run(
+            [str(BIN_DIR / "value-add-test"), str(skill)],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        assert res.returncode == 0, res.stderr
+        assert (
+            f"Run the protocol in {BIN_DIR.parent}/reference/value-add-test.md"
+            in res.stdout
+        )
+        assert (project / ".skill-kit" / "runs").exists()
 
 
 class TestScore:

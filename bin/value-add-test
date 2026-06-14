@@ -5,7 +5,7 @@
 # It is LLM-judged, so this script does ONLY the deterministic parts (mirroring
 # improving-skills/scripts/score-skill.sh): seed selection, A/B-order
 # randomization, run scaffolding, and the lift/verdict arithmetic. The
-# generation and judging are agent-driven — see ${CLAUDE_PLUGIN_ROOT}/reference/value-add-test.md.
+# generation and judging are agent-driven — see reference/value-add-test.md under the resolved Skill Kit root.
 #
 # Usage:
 #   value-add-test.sh <skill-dir>            # preflight + seeds + protocol
@@ -17,6 +17,18 @@
 # Exit codes: 0 ok; 2 usage/preflight error.
 
 set -u
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+script_root="$(cd "$script_dir/.." && pwd)"
+if [[ -f "$script_root/reference/value-add-test.md" ]]; then
+    skill_kit_root="$script_root"
+elif [[ -n "${SKILL_KIT_ROOT:-}" && -f "$SKILL_KIT_ROOT/reference/value-add-test.md" ]]; then
+    skill_kit_root="$SKILL_KIT_ROOT"
+elif [[ -n "${CLAUDE_PLUGIN_ROOT:-}" && -f "$CLAUDE_PLUGIN_ROOT/reference/value-add-test.md" ]]; then
+    skill_kit_root="$CLAUDE_PLUGIN_ROOT"
+else
+    skill_kit_root="$script_root"
+fi
 
 # ---------- tally mode ----------
 if [[ "${1:-}" == "--tally" ]]; then
@@ -125,7 +137,7 @@ echo "  positives found: $count   |   seeds selected: 3 (first/middle/last)"
 echo "  run dir: $run_dir"
 echo "  results.tsv (agent fills after judging): $tsv"
 echo
-echo "Run the protocol in ${CLAUDE_PLUGIN_ROOT}/reference/value-add-test.md. For each seed below, generate"
+echo "Run the protocol in $skill_kit_root/reference/value-add-test.md. For each seed below, generate"
 echo "the SKILL arm and the COLD arm in fresh sub-agents, then 2 blind judges."
 echo "Present the two outputs to each judge in the given A/B order (skill hidden)."
 echo
