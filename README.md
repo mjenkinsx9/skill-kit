@@ -72,15 +72,19 @@ re-points the existing tree.
 | Harness | Status | Manifest | Install / load | Docs |
 |---|---|---|---|---|
 | **Claude Code** | ✅ ported · validated (`claude plugin validate . --strict`) | `.claude-plugin/plugin.json` | `/plugin marketplace add mjenkinsx9/mjenkins-toolbox` then `/plugin install skill-kit@mjenkins-toolbox` | [docs](https://code.claude.com/docs/en/plugins-reference) |
-| **GitHub Copilot CLI** | ✅ works via fallback (no new manifest) | reuses `.claude-plugin/plugin.json` | install the plugin per Copilot CLI; it resolves `.claude-plugin/plugin.json` in its manifest search path | [docs](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference) |
+| **GitHub Copilot CLI** | ✅ ported (skills + commands) | `.plugin/plugin.json` | install the plugin per Copilot CLI; `.plugin/plugin.json` is first in its manifest search path | [docs](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference) |
 | **OpenAI Codex** | ✅ ported (manifest conforms to schema; not locally validated) | `.codex-plugin/plugin.json` | install via Codex plugins / `.agents/plugins/marketplace.json` catalog | [docs](https://developers.openai.com/codex/plugins/build) |
 | **Cursor** | ✅ ported (manifest conforms to schema; not locally validated) | `.cursor-plugin/plugin.json` | install via Cursor plugins | [docs](https://cursor.com/docs/reference/plugins) |
 | **Gemini CLI** | ✅ ported — skills layer (commands/`bin/` have caveats) | `gemini-extension.json` | install the extension; `skills/` is auto-discovered | [docs/gemini.md](docs/gemini.md) |
 
-**Copilot CLI** reads `.claude-plugin/plugin.json` as a fallback in its manifest
-search order (`.plugin/plugin.json` → `plugin.json` → `.github/plugin/plugin.json`
-→ `.claude-plugin/plugin.json`), so no extra manifest is shipped. **Codex** and
-**Cursor** get a thin sibling manifest with metadata kept in sync with
+**Copilot CLI** would read `.claude-plugin/plugin.json` as a fallback in its
+manifest search order (`.plugin/plugin.json` → `plugin.json` →
+`.github/plugin/plugin.json` → `.claude-plugin/plugin.json`), but Copilot
+defaults `skills` to `skills/` while `commands` has *no* default — so the
+fallback alone would expose the skill but not the `goal-*` commands. To ship the
+full port, skill-kit adds a `.plugin/plugin.json` (first in that search order,
+ignored by every other harness) that declares both `skills` and `commands`.
+**Codex** and **Cursor** get a thin sibling manifest with metadata kept in sync with
 `.claude-plugin/plugin.json`, pointing at the unchanged `skills/` (and, for
 Cursor, `commands/`). Only Claude Code has a validator available in this repo's
 toolchain, so those are conformance ports, not validator-verified.
@@ -126,7 +130,8 @@ proves a skill is *tight*, not that it beats just asking the model. See
 ## 📁 Layout
 
 ```
-.claude-plugin/plugin.json   Claude Code manifest (also the Copilot CLI fallback)
+.claude-plugin/plugin.json   Claude Code manifest
+.plugin/plugin.json          GitHub Copilot CLI manifest → ./skills/ + ./commands/
 .codex-plugin/plugin.json    OpenAI Codex manifest → ./skills/
 .cursor-plugin/plugin.json   Cursor manifest → ./skills/ + ./commands/
 gemini-extension.json        Gemini CLI extension (skills/ auto-discovered)

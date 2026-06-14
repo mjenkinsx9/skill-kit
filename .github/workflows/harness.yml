@@ -44,11 +44,31 @@ jobs:
       - name: Python eval-script tests
         run: python -m pytest tests -q
 
-      - name: Validate plugin manifest parses as JSON
+      # Every harness manifest must parse as JSON, and name/version must stay
+      # in sync with the Claude Code manifest (the source of truth).
+      - name: Validate plugin manifests parse and metadata stays in sync
         run: |
           python - <<'EOF'
-          import json
-          with open(".claude-plugin/plugin.json", encoding="utf-8") as f:
-              json.load(f)
-          print("ok: .claude-plugin/plugin.json")
+          import json, sys
+          ref_path = ".claude-plugin/plugin.json"
+          manifests = [
+              ref_path,
+              ".plugin/plugin.json",
+              ".codex-plugin/plugin.json",
+              ".cursor-plugin/plugin.json",
+              "gemini-extension.json",
+          ]
+          data = {}
+          for m in manifests:
+              with open(m, encoding="utf-8") as f:
+                  data[m] = json.load(f)
+              print(f"ok: {m}")
+          ref = data[ref_path]
+          failed = False
+          for m, d in data.items():
+              for field in ("name", "version"):
+                  if d.get(field) != ref.get(field):
+                      print(f"MISMATCH {m}: {field}={d.get(field)!r} != {ref.get(field)!r}")
+                      failed = True
+          sys.exit(1 if failed else 0)
           EOF
