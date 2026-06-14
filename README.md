@@ -73,7 +73,7 @@ re-points the existing tree.
 |---|---|---|---|---|
 | **Claude Code** | ✅ ported · validated (`claude plugin validate . --strict`) | `.claude-plugin/plugin.json` | `/plugin marketplace add mjenkinsx9/mjenkins-toolbox` then `/plugin install skill-kit@mjenkins-toolbox` | [docs](https://code.claude.com/docs/en/plugins-reference) |
 | **GitHub Copilot CLI** | ✅ ported (skills + commands) | `.plugin/plugin.json` | install the plugin per Copilot CLI; `.plugin/plugin.json` is first in its manifest search path | [docs](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference) |
-| **OpenAI Codex** | ✅ ported (manifest conforms to schema; not locally validated) | `.codex-plugin/plugin.json` | install via Codex plugins / `.agents/plugins/marketplace.json` catalog | [docs](https://developers.openai.com/codex/plugins/build) |
+| **OpenAI Codex** | ✅ ported · install-validated with Codex CLI | `.codex-plugin/plugin.json` | install via Codex plugins / `.agents/plugins/marketplace.json` catalog | [docs](https://developers.openai.com/codex/plugins/build) |
 | **Cursor** | ✅ ported (manifest conforms to schema; not locally validated) | `.cursor-plugin/plugin.json` | install via Cursor plugins | [docs](https://cursor.com/docs/reference/plugins) |
 | **Gemini CLI** | ✅ ported — skills layer (commands/`bin/` have caveats) | `gemini-extension.json` | install the extension; `skills/` is auto-discovered | [docs/gemini.md](docs/gemini.md) |
 
