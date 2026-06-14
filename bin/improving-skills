@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# improving-skills - PATH shim for the Skill Kit improving-skills agent workflow.
+#
+# This is intentionally not a full noninteractive implementation. The workflow is
+# an agent skill that edits, scores, and keeps/reverts SKILL.md candidates. This
+# shim makes the workflow discoverable from plugin bin/ locations and prints the
+# exact skill file to load.
+
+set -u
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+script_root="$(cd "$script_dir/.." && pwd)"
+if [[ -f "$script_root/skills/improving-skills/SKILL.md" ]]; then
+    skill_kit_root="$script_root"
+elif [[ -n "${SKILL_KIT_ROOT:-}" && -f "$SKILL_KIT_ROOT/skills/improving-skills/SKILL.md" ]]; then
+    skill_kit_root="$SKILL_KIT_ROOT"
+elif [[ -n "${CLAUDE_PLUGIN_ROOT:-}" && -f "$CLAUDE_PLUGIN_ROOT/skills/improving-skills/SKILL.md" ]]; then
+    skill_kit_root="$CLAUDE_PLUGIN_ROOT"
+else
+    skill_kit_root="$script_root"
+fi
+skill_file="$skill_kit_root/skills/improving-skills/SKILL.md"
+
+if [[ ! -f "$skill_file" ]]; then
+    echo "error: improving-skills SKILL.md not found at $skill_file" >&2
+    exit 2
+fi
+
+case "${1:-}" in
+    --path)
+        printf '%s\n' "$skill_file"
+        ;;
+    --cat|--print)
+        cat "$skill_file"
+        ;;
+    -h|--help)
+        cat <<EOF
+Usage: improving-skills [--path|--cat] [target/SKILL.md]
+
+PATH shim for Skill Kit's improving-skills agent workflow.
+
+This command does not run the autoresearch loop by itself. In an agent session,
+load the skill at:
+  $skill_file
+
+Then invoke:
+  /skill-kit:improving-skills <target/SKILL.md>
+
+If your harness does not support that slash command, ask the agent to read the
+path printed by --path and follow it for <target/SKILL.md>.
+EOF
+        ;;
+    *)
+        target="${1:-<target/SKILL.md>}"
+        cat <<EOF
+Skill Kit improving-skills workflow is available at:
+  $skill_file
+
+Agent instruction:
+  Read $skill_file and follow it for: $target
+
+Slash command equivalent:
+  /skill-kit:improving-skills $target
+EOF
+        ;;
+esac

@@ -43,7 +43,7 @@ exists to *prove* it rather than assume it.
 | 🔄 **Autoresearch** | [`improving-skills`](skills/improving-skills/SKILL.md) | Iterative modify → score → keep-or-revert loop that tightens an existing SKILL.md | Heavy · on demand |
 | ⚓ **Goal anchoring** | [`goal-new-skill`](commands/goal-new-skill.md) · [`goal-improve-skill`](commands/goal-improve-skill.md) | Skill work is driven by a measurable end state, not vibes | Free · per skill |
 
-The harness is self-tested (10 pathological fixtures + 32 pytest tests) and CI
+The harness is self-tested (10 pathological fixtures + 34 pytest tests) and CI
 enforces zero FAILs *and* zero WARNs on the shipped skills, on every push and PR.
 
 ## 🚀 Install
@@ -58,9 +58,10 @@ Inside Claude Code, on any machine:
 Update later with `/plugin update skill-kit`.
 
 Because a plugin's `bin/` joins the Bash `PATH`, every helper is callable by
-bare name (`check-skill`, `score-skill`, `behavioral-check`, …) in any repo —
-no layout assumed. Run artifacts land in `.skill-kit/runs/` in the consuming
-project (gitignore it).
+bare name (`check-skill`, `score-skill`, `behavioral-check`,
+`value-add-test`, `improving-skills`, `goal-new-skill`,
+`goal-improve-skill`, …) in any repo — no layout assumed. Run artifacts land in
+`.skill-kit/runs/` in the consuming project (gitignore it).
 
 ### Other harnesses
 
@@ -106,6 +107,11 @@ behavioral-check .claude/skills/my-skill --dry-run
 # Blind value-add baseline (preflight + tally; generation is agent-driven):
 value-add-test .claude/skills/my-skill
 
+# PATH shims for agent workflows/commands (print the exact protocol to load):
+goal-new-skill goal.md
+goal-improve-skill goal.md
+improving-skills .claude/skills/my-skill/SKILL.md
+
 # Empirical trigger smoke test with fresh Pi/Codex probe sessions:
 trigger-accuracy run-probes .claude/skills/my-skill --runner pi --runs 1 --balanced --max-prompts 2
 trigger-accuracy run-probes .claude/skills/my-skill --runner codex --runs 1 --balanced --max-prompts 2 --text-signal
@@ -146,6 +152,9 @@ bin/                         deterministic helpers, auto-added to PATH
   behavioral-check           live tests.md command runner
   trigger-accuracy           empirical trigger helpers (Claude agent IDs or Pi/Codex transcripts)
   value-add-test             blind head-to-head scaffolding + tally
+  goal-new-skill             PATH shim for /skill-kit:goal-new-skill
+  goal-improve-skill         PATH shim for /skill-kit:goal-improve-skill
+  improving-skills           PATH shim for /skill-kit:improving-skills
 commands/                    /skill-kit:goal-new-skill · /skill-kit:goal-improve-skill
 skills/improving-skills/     the autoresearch loop (/skill-kit:improving-skills)
 reference/                   protocols the loop runs at milestones
@@ -159,7 +168,7 @@ than no linter:
 
 ```bash
 bash tests/run-self-tests.sh    # 10 fixture skills with known verdicts
-python -m pytest tests -q       # 32 tests for the Python eval scripts
+python -m pytest tests -q       # 34 tests for the Python eval scripts
 ```
 
 ## 🔁 Relationship to skill-testing

@@ -12,7 +12,7 @@ the repo split, the dev-bench harness was 144 lines ahead (resynced 2026-06-10).
 | dev-bench (skill-testing) | plugin (skill-kit) | intentional adaptations in the plugin copy |
 |---|---|---|
 | `eval/check-skill.sh` | `bin/check-skill` | header comment filename/usage only (2 lines) |
-| `eval/value-add-test.sh` | `bin/value-add-test` | doc refs → `${CLAUDE_PLUGIN_ROOT}/reference/…`; `run_dir` → `${CLAUDE_PROJECT_DIR:-.}/.skill-kit/runs/` |
+| `eval/value-add-test.sh` | `bin/value-add-test` | doc refs resolve from `${SKILL_KIT_ROOT}`/`${CLAUDE_PLUGIN_ROOT}`/`dirname "$0"/..`; `run_dir` → `${CLAUDE_PROJECT_DIR:-.}/.skill-kit/runs/` |
 | `eval/value-add-test.md` | `reference/value-add-test.md` | bare command names; Artifact section uses `.skill-kit/runs/` |
 | `eval/trigger-accuracy.py` | `bin/trigger-accuracy` | docstring doc-pointer only |
 | `eval/trigger-accuracy.md` | `reference/trigger-accuracy.md` | bare command names; `<skill-dir>` generalization; inline description advice (no `WRITING-DESCRIPTIONS.md` here); `references/scoring.md` pointer |

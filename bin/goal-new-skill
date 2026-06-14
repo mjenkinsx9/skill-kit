@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# goal-new-skill - PATH shim for the Skill Kit new-skill goal command.
+
+set -u
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+script_root="$(cd "$script_dir/.." && pwd)"
+if [[ -f "$script_root/commands/goal-new-skill.md" ]]; then
+    skill_kit_root="$script_root"
+elif [[ -n "${SKILL_KIT_ROOT:-}" && -f "$SKILL_KIT_ROOT/commands/goal-new-skill.md" ]]; then
+    skill_kit_root="$SKILL_KIT_ROOT"
+elif [[ -n "${CLAUDE_PLUGIN_ROOT:-}" && -f "$CLAUDE_PLUGIN_ROOT/commands/goal-new-skill.md" ]]; then
+    skill_kit_root="$CLAUDE_PLUGIN_ROOT"
+else
+    skill_kit_root="$script_root"
+fi
+command_file="$skill_kit_root/commands/goal-new-skill.md"
+
+if [[ ! -f "$command_file" ]]; then
+    echo "error: goal-new-skill command not found at $command_file" >&2
+    exit 2
+fi
+
+case "${1:-}" in
+    --path)
+        printf '%s\n' "$command_file"
+        ;;
+    --cat|--print)
+        cat "$command_file"
+        ;;
+    -h|--help)
+        cat <<EOF
+Usage: goal-new-skill [--path|--cat] [goal.md]
+
+PATH shim for Skill Kit's goal-new-skill agent command.
+
+This command does not synthesize a skill by itself. In an agent session, run:
+  /skill-kit:goal-new-skill <goal.md>
+
+If your harness does not support that slash command, ask the agent to read:
+  $command_file
+and follow it for <goal.md>.
+EOF
+        ;;
+    *)
+        goal="${1:-<goal.md>}"
+        cat <<EOF
+Skill Kit goal-new-skill command is available at:
+  $command_file
+
+Agent instruction:
+  Read $command_file and follow it for: $goal
+
+Slash command equivalent:
+  /skill-kit:goal-new-skill $goal
+EOF
+        ;;
+esac

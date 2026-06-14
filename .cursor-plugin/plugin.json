@@ -1,6 +1,6 @@
 {
   "name": "skill-kit",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "license": "MIT",
   "description": "Author, evaluate, security-review, and autonomously improve Claude Agent Skills. Bundles the skill-building workflow as the improving-skills autoresearch loop, goal-setting commands, reference protocols, and the static eval harness.",
   "author": {
