@@ -1,54 +1,54 @@
-# Gemini CLI — port status: **documented gap, no manifest shipped**
+# Gemini CLI — port status: **ported (skills layer), with caveats**
 
-skill-kit does **not** ship a Gemini CLI extension. This page explains why, and
-what a faithful port would actually require, so nobody mistakes the absence of a
-manifest for an oversight.
+skill-kit ships a Gemini CLI extension: [`gemini-extension.json`](../gemini-extension.json)
+at the repo root. This page records exactly what ports and what doesn't.
 
-## Why the other manifests don't transfer
+## What ports
 
-Claude Code, Codex, Cursor, and Factory Droid all share the same packaging
-model: a small JSON manifest plus auto-discovered `skills/<name>/SKILL.md`
-directories and markdown `commands/`. skill-kit's portable core — the
-`improving-skills` SKILL.md, the `goal-*` markdown commands, and the `bin/`
-helpers that those workflows shell out to (`check-skill`, `score-skill`,
-`behavioral-check`, …) — drops straight into that model. Adding a manifest that
-points at the existing `skills/` and `commands/` directories is genuinely all
-those harnesses need.
+Per the [Gemini CLI extensions reference](https://geminicli.com/docs/extensions/reference/),
+an extension can **bundle agent skills**:
 
-Gemini CLI uses a different model. An extension is described by a
-[`gemini-extension.json`](https://geminicli.com/docs/extensions/reference/)
-manifest whose primary surface is **MCP servers**, with custom commands authored
-as **TOML** files under `commands/`. There is no `SKILL.md` primitive and no
-mechanism that adds a plugin's `bin/` directory to the shell `PATH`. So the three
-things that make skill-kit useful do not have a one-to-one mapping:
+> "Bundle agent skills to provide specialized workflows. Place skill
+> definitions in a `skills/` directory. For example, `skills/security-audit/SKILL.md`
+> exposes a `security-audit` skill."
 
-| skill-kit component | Gemini equivalent | Gap |
-|---|---|---|
-| `skills/improving-skills/SKILL.md` (model-invoked workflow) | none | No skills primitive — would have to be re-expressed as a custom command or MCP prompt |
-| `commands/goal-*.md` (markdown slash commands) | `commands/*.toml` | Format mismatch — markdown bodies must be rewritten as TOML command definitions |
-| `bin/*` helpers, auto-added to `PATH` | MCP server tools | No PATH injection — each helper must be wrapped and exposed as an MCP tool |
+That is the same `skills/<name>/SKILL.md` layout skill-kit already uses, and it
+is **auto-discovered** — no manifest field points at it. So the portable core,
+`skills/improving-skills/SKILL.md`, loads in Gemini CLI exactly as it does in
+Claude Code. The manifest only needs the identifying fields:
 
-## What a faithful port would require
+```json
+{ "name": "skill-kit", "version": "0.2.0", "description": "…" }
+```
 
-This is real work, not a manifest drop, which is why it is documented rather than
-faked:
+`name` and `version` are the required fields; `description` is for display.
+Metadata is kept in sync with `.claude-plugin/plugin.json`.
 
-1. **An MCP server wrapping `bin/`.** Author a small server (the repo is
-   bash + Python today, so a thin Node/Python MCP server) exposing
-   `check-skill`, `score-skill`, `token-count`, `behavioral-check`,
-   `trigger-accuracy`, and `value-add-test` as MCP tools, then declare it under
-   `mcpServers` in `gemini-extension.json` using `${extensionPath}` for
-   portability.
-2. **TOML command conversion.** Re-author `commands/goal-new-skill.md` and
-   `commands/goal-improve-skill.md` as `commands/*.toml`. The interview logic
-   survives; the wrapper format changes.
-3. **The autoresearch loop.** `improving-skills` is an agent-driven loop, not a
-   single tool call. With no skills primitive it would need to live as a custom
-   command that orchestrates the MCP tools above — the largest single piece of
-   the port.
+## What does NOT port automatically
 
-Until that MCP wrapper exists, a `gemini-extension.json` pointing at the current
-directories would not function, so none is shipped.
+Two layers don't transfer one-to-one, which is why this is "ported with
+caveats" rather than a clean drop-in:
+
+1. **Slash commands are TOML, not markdown.** Gemini reads custom commands from
+   `commands/*.toml` ("Provide custom commands by placing TOML files in a
+   `commands/` subdirectory"). skill-kit's `commands/goal-new-skill.md` and
+   `commands/goal-improve-skill.md` are markdown, so they are **not** picked up
+   as Gemini commands. The interview logic would need re-authoring as TOML to
+   expose `/goal-new-skill` etc. in Gemini. The skills layer does not depend on
+   these commands, so the core still works without them.
+2. **`bin/` is not auto-added to `PATH`.** Claude Code puts a plugin's `bin/` on
+   the shell `PATH`, which is why `check-skill`, `score-skill`, etc. are callable
+   by bare name. Gemini has no equivalent injection, so the SKILL.md's documented
+   commands resolve only if the helpers are reachable some other way (e.g. the
+   user puts `bin/` on `PATH`, or invokes them by repo-relative path). This is a
+   shared caveat across every non-Claude-Code harness here, not unique to Gemini.
+
+## Optional future work
+
+To make the command and helper layers first-class in Gemini, convert the
+`goal-*` commands to TOML and/or wrap the `bin/` helpers behind an MCP server
+declared under `mcpServers` in `gemini-extension.json` (using `${extensionPath}`
+for portability). Neither is required for the skills layer to function.
 
 ## References
 
