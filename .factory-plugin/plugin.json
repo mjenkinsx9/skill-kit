@@ -1,0 +1,8 @@
+{
+  "name": "skill-kit",
+  "description": "Author, evaluate, security-review, and autonomously improve Claude Agent Skills. Bundles the skill-building workflow as the improving-skills autoresearch loop, goal-setting commands, reference protocols, and the static eval harness.",
+  "version": "0.2.0",
+  "author": {
+    "name": "mjenkinsx9"
+  }
+}
