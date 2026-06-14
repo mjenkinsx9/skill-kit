@@ -74,25 +74,21 @@ re-points the existing tree.
 | **Claude Code** | ✅ ported · validated (`claude plugin validate . --strict`) | `.claude-plugin/plugin.json` | `/plugin marketplace add mjenkinsx9/mjenkins-toolbox` then `/plugin install skill-kit@mjenkins-toolbox` | [docs](https://code.claude.com/docs/en/plugins-reference) |
 | **GitHub Copilot CLI** | ✅ works via fallback (no new manifest) | reuses `.claude-plugin/plugin.json` | install the plugin per Copilot CLI; it resolves `.claude-plugin/plugin.json` in its manifest search path | [docs](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference) |
 | **OpenAI Codex** | ✅ ported (manifest conforms to schema; not locally validated) | `.codex-plugin/plugin.json` | install via Codex plugins / `.agents/plugins/marketplace.json` catalog | [docs](https://developers.openai.com/codex/plugins/build) |
-| **Factory Droid** | ✅ ported (manifest conforms to schema; not locally validated) | `.factory-plugin/plugin.json` | install via the Factory plugin manager | [docs](https://docs.factory.ai/cli/configuration/plugins) |
 | **Cursor** | ✅ ported (manifest conforms to schema; not locally validated) | `.cursor-plugin/plugin.json` | install via Cursor plugins | [docs](https://cursor.com/docs/reference/plugins) |
 | **Gemini CLI** | ✅ ported — skills layer (commands/`bin/` have caveats) | `gemini-extension.json` | install the extension; `skills/` is auto-discovered | [docs/gemini.md](docs/gemini.md) |
-| **OpenCode** | 📝 documented gap (JS/TS modules; no JSON manifest) | none | see write-up | [docs/opencode.md](docs/opencode.md) |
 
 **Copilot CLI** reads `.claude-plugin/plugin.json` as a fallback in its manifest
 search order (`.plugin/plugin.json` → `plugin.json` → `.github/plugin/plugin.json`
-→ `.claude-plugin/plugin.json`), so no extra manifest is shipped. **Codex**,
-**Factory**, and **Cursor** get a thin sibling manifest with metadata kept in
-sync with `.claude-plugin/plugin.json`, pointing at the unchanged `skills/` (and,
-for Cursor, `commands/`). Only Claude Code has a validator available in this
-repo's toolchain, so those are conformance ports, not validator-verified.
+→ `.claude-plugin/plugin.json`), so no extra manifest is shipped. **Codex** and
+**Cursor** get a thin sibling manifest with metadata kept in sync with
+`.claude-plugin/plugin.json`, pointing at the unchanged `skills/` (and, for
+Cursor, `commands/`). Only Claude Code has a validator available in this repo's
+toolchain, so those are conformance ports, not validator-verified.
 **Gemini CLI** auto-discovers a `skills/<name>/SKILL.md` directory, so its
 `gemini-extension.json` carries just the synced metadata and the
 `improving-skills` skill ports directly — with caveats: Gemini commands are TOML
 (the markdown `goal-*` commands don't auto-port) and it doesn't add `bin/` to
-`PATH`. See [docs/gemini.md](docs/gemini.md). **OpenCode** uses a JS/TS-module
-model that can't host skill-kit's SKILL.md + `bin/` core without real
-reimplementation work, so it's honestly documented as a gap rather than faked.
+`PATH`. See [docs/gemini.md](docs/gemini.md).
 
 ## 🧭 Usage
 
@@ -132,11 +128,9 @@ proves a skill is *tight*, not that it beats just asking the model. See
 ```
 .claude-plugin/plugin.json   Claude Code manifest (also the Copilot CLI fallback)
 .codex-plugin/plugin.json    OpenAI Codex manifest → ./skills/
-.factory-plugin/plugin.json  Factory Droid manifest
 .cursor-plugin/plugin.json   Cursor manifest → ./skills/ + ./commands/
 gemini-extension.json        Gemini CLI extension (skills/ auto-discovered)
 docs/gemini.md               Gemini CLI port notes + caveats
-docs/opencode.md             OpenCode port gap (JS/TS module model)
 bin/                         deterministic helpers, auto-added to PATH
   check-skill                21-check static harness
   score-skill · token-count  mechanical scorers for the improvement loop
