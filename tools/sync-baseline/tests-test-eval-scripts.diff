@@ -1,0 +1,171 @@
+1c1
+< """Self-tests for eval/behavioral-check.py and eval/trigger-accuracy.py.
+---
+> """Self-tests for bin/behavioral-check and bin/trigger-accuracy.
+5c5
+<     python -m pytest eval/tests -q
+---
+>     python -m pytest tests -q
+7,10c7,12
+< Both scripts are pure stdlib and have no package (their filenames contain
+< hyphens), so they are loaded via importlib.util.spec_from_file_location.
+< Nothing here executes external commands or touches ~/.claude — score()'s
+< transcript resolution is monkeypatched onto tmp_path fixtures.
+---
+> Both scripts are pure stdlib and have no package (their filenames are
+> extensionless bin/ executables), so they are loaded via
+> importlib.machinery.SourceFileLoader (spec_from_file_location alone cannot
+> infer a loader for a suffix-less file). Nothing here executes external
+> commands or touches ~/.claude — score()'s transcript resolution is
+> monkeypatched onto tmp_path fixtures.
+12a15
+> import importlib.machinery
+14a18,20
+> import os
+> import stat
+> import subprocess
+20c26
+< EVAL_DIR = Path(__file__).resolve().parents[1]  # .../eval
+---
+> BIN_DIR = Path(__file__).resolve().parents[1] / "bin"  # .../bin
+24c30,32
+<     spec = importlib.util.spec_from_file_location(mod_name, EVAL_DIR / filename)
+---
+>     path = BIN_DIR / filename
+>     loader = importlib.machinery.SourceFileLoader(mod_name, str(path))
+>     spec = importlib.util.spec_from_file_location(mod_name, path, loader=loader)
+31,32c39,40
+< bc = _load("behavioral_check", "behavioral-check.py")
+< ta = _load("trigger_accuracy", "trigger-accuracy.py")
+---
+> bc = _load("behavioral_check", "behavioral-check")
+> ta = _load("trigger_accuracy", "trigger-accuracy")
+258a267,301
+>     def test_pi_tool_call_read_fallback(self, tmp_path):
+>         blocks = [{
+>             "type": "toolCall", "name": "read",
+>             "arguments": {"path": "/repo/.codex/skills/widget-lint/SKILL.md"},
+>         }]
+>         t = _write_transcript(tmp_path / "pi.jsonl", blocks)
+>         res = ta.detect_fire(
+>             t, "widget-lint", skill_md=".codex/skills/widget-lint/SKILL.md")
+>         assert res == {"fired": True, "other_skill_fired": None, "error": None}
+> 
+>     def test_openai_tool_calls_read_fallback(self, tmp_path):
+>         obj = {"message": {"role": "assistant", "tool_calls": [{"function": {
+>             "name": "functions.read",
+>             "arguments": json.dumps(
+>                 {"path": "/repo/.codex/skills/widget-lint/SKILL.md"}),
+>         }}]}}
+>         t = tmp_path / "codex.jsonl"
+>         t.write_text(json.dumps(obj), encoding="utf-8")
+>         res = ta.detect_fire(
+>             t, "widget-lint", skill_md=".codex/skills/widget-lint/SKILL.md")
+>         assert res == {"fired": True, "other_skill_fired": None, "error": None}
+> 
+>     def test_top_level_function_call_read_fallback(self, tmp_path):
+>         obj = {
+>             "type": "function_call",
+>             "name": "read",
+>             "arguments": json.dumps(
+>                 {"path": "/repo/.codex/skills/widget-lint/SKILL.md"}),
+>         }
+>         t = tmp_path / "function_call.jsonl"
+>         t.write_text(json.dumps(obj), encoding="utf-8")
+>         res = ta.detect_fire(
+>             t, "widget-lint", skill_md=".codex/skills/widget-lint/SKILL.md")
+>         assert res == {"fired": True, "other_skill_fired": None, "error": None}
+> 
+263a307,324
+>     def test_empty_transcript_is_error(self, tmp_path):
+>         t = tmp_path / "empty.jsonl"
+>         t.write_text("", encoding="utf-8")
+>         res = ta.detect_fire(t, "widget-lint")
+>         assert res == {"fired": False, "other_skill_fired": None,
+>                        "error": "empty-transcript"}
+> 
+>     def test_codex_text_signal_optional(self, tmp_path):
+>         t = tmp_path / "codex-text.jsonl"
+>         t.write_text(json.dumps({
+>             "type": "item.completed",
+>             "item": {"type": "agent_message",
+>                      "text": "I am using the `widget-lint` workflow."},
+>         }), encoding="utf-8")
+>         assert ta.detect_fire(t, "widget-lint")["fired"] is False
+>         assert ta.detect_fire(t, "widget-lint", text_signal=True) == {
+>             "fired": True, "other_skill_fired": None, "error": None}
+> 
+267a329,385
+> class TestPathShims:
+>     def test_agent_workflow_shims_are_executable_and_resolve_repo_root(self):
+>         expected = {
+>             "improving-skills": (
+>                 BIN_DIR.parent / "skills" / "improving-skills" / "SKILL.md"
+>             ),
+>             "goal-new-skill": BIN_DIR.parent / "commands" / "goal-new-skill.md",
+>             "goal-improve-skill": (
+>                 BIN_DIR.parent / "commands" / "goal-improve-skill.md"
+>             ),
+>         }
+>         env = os.environ.copy()
+>         env["CLAUDE_PLUGIN_ROOT"] = str(BIN_DIR.parent / "not-the-plugin-root")
+>         env["SKILL_KIT_ROOT"] = str(BIN_DIR.parent / "also-not-the-plugin-root")
+>         for name, path in expected.items():
+>             mode = (BIN_DIR / name).stat().st_mode
+>             assert mode & stat.S_IXUSR, f"{name} must be executable"
+>             res = subprocess.run(
+>                 [str(BIN_DIR / name), "--path"],
+>                 check=True,
+>                 text=True,
+>                 capture_output=True,
+>                 env=env,
+>             )
+>             assert res.stdout.strip() == str(path)
+> 
+>     def test_value_add_test_falls_back_to_script_root_without_claude_env(self, tmp_path):
+>         skill = tmp_path / "my-skill"
+>         skill.mkdir()
+>         (skill / "SKILL.md").write_text(
+>             "---\nname: my-skill\ndescription: Test skill.\n---\n",
+>             encoding="utf-8",
+>         )
+>         (skill / "test-prompts.md").write_text(
+>             "y | first positive\ny | second positive\ny | third positive\n",
+>             encoding="utf-8",
+>         )
+>         project = tmp_path / "project"
+>         project.mkdir()
+>         env = os.environ.copy()
+>         env.pop("CLAUDE_PLUGIN_ROOT", None)
+>         env.pop("SKILL_KIT_ROOT", None)
+>         env["CLAUDE_PROJECT_DIR"] = str(project)
+>         res = subprocess.run(
+>             [str(BIN_DIR / "value-add-test"), str(skill)],
+>             text=True,
+>             capture_output=True,
+>             env=env,
+>         )
+>         assert res.returncode == 0, res.stderr
+>         assert (
+>             f"Run the protocol in {BIN_DIR.parent}/reference/value-add-test.md"
+>             in res.stdout
+>         )
+>         assert (project / ".skill-kit" / "runs").exists()
+> 
+> 
+319a438,452
+> 
+>     def test_score_transcripts_uses_explicit_paths(self, tmp_path):
+>         fire = [_skill_block("widget-lint")]
+>         miss = [_skill_block("other-skill")]
+>         fire_t = _write_transcript(tmp_path / "fire.jsonl", fire)
+>         miss_t = _write_transcript(tmp_path / "miss.jsonl", miss)
+>         runs = [
+>             {"prompt": "p-tp", "should_fire": True,
+>              "transcripts": [str(fire_t)]},
+>             {"prompt": "p-tn", "should_fire": False,
+>              "transcripts": [str(miss_t)]},
+>         ]
+>         result = ta.score_transcripts(runs, "widget-lint", None, 0.5)
+>         assert result["mechanism"] == "transcript-paths"
+>         assert result["aggregate"]["trigger"] == 1.0

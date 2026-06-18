@@ -1,0 +1,40 @@
+9c9
+< This command **does not write SKILL.md or tests.md**. Those come from the manual practice runs CLAUDE.md mandates. This command writes a single artifact — `staging/<name>/goal.md` — and prints the `/goal` line for the user to invoke separately.
+---
+> This command **does not write SKILL.md or tests.md**. Those come from manual practice runs — the skill-kit workflow codifies skills from real, hand-executed runs, never from imagination. This command writes a single artifact — `.claude/skills/<name>/goal.md` — and prints the `/goal` line for the user to invoke separately.
+17c17
+<    - If the first hyphen-separated segment doesn't end in `-ing`, point that out (CLAUDE.md prefers gerunds) but accept the user's call.
+---
+>    - If the first hyphen-separated segment doesn't end in `-ing`, point that out (gerund-form names are the skill-kit convention; the check-skill harness warns otherwise) but accept the user's call.
+21,22c21,22
+<    - If `staging/<name>/goal.md` already exists, read it and ask whether to overwrite, edit, or abort.
+<    - If `.claude/skills/<name>/` or `examples/<name>/` already exists, point that out — the skill may already be authored and the user might want `/goal-improve-skill` instead.
+---
+>    - If `.claude/skills/<name>/goal.md` already exists, read it and ask whether to overwrite, edit, or abort.
+>    - If `.claude/skills/<name>/SKILL.md` already exists, the skill is already authored — point that out and suggest `/skill-kit:goal-improve-skill` instead.
+33c33
+<    I have performed <task> manually on three distinct inputs: <input-1>, <input-2>, <input-3>. Each run is captured in staging/<name>/tests.md as a separate scenario with the actual input, the actual output, and a `Last verified: <today>` line at the top. staging/<name>/SKILL.md exists with frontmatter that has a third-person `description` covering both what the skill does and when to use it, and the body documents the workflow I just exercised. `eval/check-skill.sh staging/<name>` exits 0 with zero FAILs. The skill must NOT <anti-goals from Q4>. Or stop after 30 turns.
+---
+>    I have performed <task> manually on three distinct inputs: <input-1>, <input-2>, <input-3>. Each run is captured in .claude/skills/<name>/tests.md as a separate scenario with the actual input, the actual output, and a `Last verified: <today>` line at the top. .claude/skills/<name>/SKILL.md exists with frontmatter that has a third-person `description` covering both what the skill does and when to use it, and the body documents the workflow I just exercised. `check-skill .claude/skills/<name>` exits 0 with zero FAILs. The skill must NOT <anti-goals from Q4>. Or stop after 30 turns.
+38c38
+< 5. **Write `staging/<name>/goal.md`** with the structure below. Create `staging/<name>/` if it doesn't exist (use Bash `mkdir -p` via PowerShell `New-Item -ItemType Directory -Force` since this is Windows).
+---
+> 5. **Write `.claude/skills/<name>/goal.md`** with the structure below. Create `.claude/skills/<name>/` if it doesn't exist (`mkdir -p`).
+49c49
+< **Target:** staging/<name>/
+---
+> **Target:** .claude/skills/<name>/
+57,59c57,59
+< - `eval/check-skill.sh staging/<name>` exits 0
+< - `staging/<name>/tests.md` has ≥3 scenarios with a `Last verified` date, each capturing one practice run
+< - `staging/<name>/SKILL.md` has a third-person `description` field that includes both *what* and *when*
+---
+> - `check-skill .claude/skills/<name>` exits 0
+> - `.claude/skills/<name>/tests.md` has ≥3 scenarios with a `Last verified` date, each capturing one practice run
+> - `.claude/skills/<name>/SKILL.md` has a third-person `description` field that includes both *what* and *when*
+97c97
+< Goal drafted: staging/<name>/goal.md
+---
+> Goal drafted: .claude/skills/<name>/goal.md
+109a110
+> - `/goal` is not part of this plugin or stock Claude Code — it comes from the user's own environment. If their environment has no `/goal` command, say so in the printed output and tell them the written goal.md serves as the acceptance checklist to work against manually.

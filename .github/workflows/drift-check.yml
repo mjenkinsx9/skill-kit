@@ -1,0 +1,42 @@
+name: drift-check
+
+# Fails the PR if any tracked dev-bench<->plugin pair has drifted away from its
+# documented adaptation (see SYNC.md + tools/check-sync.sh). This makes the
+# "re-diff every pair before release" discipline executable instead of manual.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drift-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout skill-kit
+        uses: actions/checkout@v4
+
+      # Clone the dev-bench at the ref pinned in SYNC.md ("Pinned dev-bench
+      # ref"). Keep this SHA in lockstep with SYNC.md when you re-sync.
+      # `ref` MUST be a full 40-char commit SHA (actions/checkout treats a short
+      # SHA as a branch/tag pattern and fails to fetch it); fetch-depth: 0 makes
+      # an arbitrary historical commit guaranteed-fetchable.
+      #
+      # NOTE: if mjenkinsx9/skill-testing is private, the checkout below will
+      # 404. In that case give this step a PAT with read access via token:
+      #   token: ${{ secrets.SKILL_TESTING_RO_PAT }}
+      - name: Checkout skill-testing dev-bench (pinned ref)
+        uses: actions/checkout@v4
+        with:
+          repository: mjenkinsx9/skill-testing
+          ref: fd200a824b86cbec6abf06b0609ea29ebd32a282
+          path: skill-testing
+          fetch-depth: 0
+
+      - name: Check for undocumented drift
+        run: DB="$GITHUB_WORKSPACE/skill-testing" bash tools/check-sync.sh

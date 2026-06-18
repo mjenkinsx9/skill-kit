@@ -4,8 +4,10 @@ Guidance for AI agents (and humans) working in this repo.
 
 ## What this is
 
-Skill Kit is a multi-harness plugin (Claude Code / Codex / Cursor / Gemini / Pi) for
-authoring, evaluating, security-reviewing, and improving Agent Skills. It ships skills
+Skill Kit is a multi-harness plugin (Claude Code / Codex / Cursor / Gemini) for
+authoring, evaluating, security-reviewing, and improving Agent Skills. (Pi is not an
+install harness — it is wired only as a `trigger-accuracy --runner pi` probe-runner
+target.) It ships skills
 plus `bin/` tools; there is **no compiled bundle** (no `package.json`), so the plugin
 manifests are the only version-bearing files.
 
@@ -40,8 +42,9 @@ it, using `.claude-plugin/plugin.json` as the source of truth):
 5. `gemini-extension.json`
 
 Then run the tests, commit via PR, merge, and cut the release: `git tag vX.Y.Z` +
-`gh release create vX.Y.Z`. (Note: this repo has no git tags / GitHub releases yet — the
-first release should be cut at the version already in the manifests.)
+`gh release create vX.Y.Z`. (`v0.2.2` is tagged and released; repeat this for the next
+release — bump the five manifests in lockstep, run the gates, then tag `vX.Y.Z` and
+`gh release create vX.Y.Z` at that version.)
 
 Semver (pre-1.0): new features → minor (`0.x.0`); fixes only → patch (`0.x.y`).
 

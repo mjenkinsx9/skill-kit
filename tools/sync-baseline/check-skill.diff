@@ -1,0 +1,8 @@
+2c2
+< # check-skill.sh - static best-practices harness for SKILL.md files.
+---
+> # check-skill - static best-practices harness for SKILL.md files.
+5c5
+< #   eval/check-skill.sh <path-to-SKILL.md-or-skill-dir>
+---
+> #   check-skill <path-to-SKILL.md-or-skill-dir>

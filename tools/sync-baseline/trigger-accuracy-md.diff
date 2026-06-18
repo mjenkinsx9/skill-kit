@@ -1,0 +1,134 @@
+8,9c8,9
+< own behavior**. This test instead **observes the real decision**: it gives a sub-agent the raw user
+< prompt and watches whether the `Skill` tool actually fires.
+---
+> own behavior**. This test instead **observes the real decision**: it gives a fresh agent run the raw user
+> prompt and watches whether the `Skill` tool fires or the target `SKILL.md` is loaded.
+11c11
+< > **Milestone / pre-promotion check, not per-edit.** It spawns one sub-agent per prompt-run
+---
+> > **Milestone / pre-promotion check, not per-edit.** It spawns or runs one fresh agent session per prompt-run
+17c17
+< - **Installed-mode, real competition.** The sub-agent inherits this session's *entire* live skill
+---
+> - **Installed-mode, real competition.** The measured agent run inherits that harness's *entire* live skill
+22,27c22,28
+< - **No isolation is available** (established by spike, 2026-06-01): sub-agents inherit the parent
+<   registry, so a worktree can't isolate skills; and `claude -p` only hides *project* skills while
+<   global plugins still load. Measuring a description "in a vacuum" isn't achievable here, and isn't
+<   the question worth asking in a crowded skill environment anyway.
+< - **Fidelity caveat:** triggering is measured in a **sub-agent** context, which is close to but not
+<   identical to a top-level user turn. Treat the number as a strong empirical signal, not a
+---
+> - **No perfect isolation is available** (established by spike, 2026-06-01): Claude sub-agents inherit
+>   the parent registry, `claude -p` only hides *project* skills while global plugins still load, and
+>   Pi/Codex probe sessions still run with whatever skills that harness has installed. Measuring a
+>   description "in a vacuum" isn't achievable here, and isn't the question worth asking in a crowded
+>   skill environment anyway.
+> - **Fidelity caveat:** triggering is measured in fresh probe sessions, which are close to but not
+>   identical to a normal top-level user turn. Treat the number as a strong empirical signal, not a
+32c33
+< - The skill is **discoverable** — it lives in `.claude/skills/<name>/` (this build live-loads new
+---
+> - The skill is **discoverable** — it lives in `<skill-dir>/` (this build live-loads new
+39,40c40,43
+< The spawn loop is Claude-driven; `eval/trigger-accuracy.py` does the deterministic parsing,
+< detection, and aggregation.
+---
+> The spawn loop is harness-driven; `trigger-accuracy` does the deterministic parsing,
+> detection, and aggregation. Claude Code can pass sub-agent `agentId`s to `score`.
+> Pi, Codex, and other harnesses can pass explicit session/transcript paths to
+> `score-transcripts`.
+59c62
+< `cp .claude/skills/<name>/SKILL.md /tmp/<name>.SKILL.bak` first; restore it in step 5.
+---
+> `cp <skill-dir>/SKILL.md /tmp/<name>.SKILL.bak` first; restore it in step 5.
+63c66
+< python eval/trigger-accuracy.py parse-prompts .claude/skills/<name>/test-prompts.md
+---
+> trigger-accuracy parse-prompts <skill-dir>/test-prompts.md
+67,69c70,84
+< ### 3. Spawn one sub-agent per prompt-run
+< For each prompt, spawn `runs` (default 3) Agent sub-agents (parallelize them). Each sub-agent's
+< prompt is the **raw fixture prompt** plus this neutral cap note (it must not hint which skill to
+---
+> ### 3. Spawn one fresh probe per prompt-run
+> 
+> For Claude Code, spawn `runs` (default 3) Agent sub-agents (parallelize them). For Pi or Codex,
+> you can let the helper run fresh noninteractive probe sessions directly:
+> 
+> ```bash
+> trigger-accuracy run-probes <skill-dir> --runner pi --runs 1 --balanced --max-prompts 2
+> trigger-accuracy run-probes <skill-dir> --runner codex --runs 1 --balanced --max-prompts 2 --text-signal
+> ```
+> 
+> `run-probes` writes transcripts, `runs.json`, and `result.json` under `.skill-kit/runs/`. It uses
+> read-only Pi tools and Codex's read-only sandbox by default. `--text-signal` is useful for Codex
+> because Codex may report that it is using a skill without exposing a discrete Skill tool call.
+> 
+> For manual probe orchestration, each prompt-run's prompt is the **raw fixture prompt** plus this neutral cap note (it must not hint which skill to
+81a97,99
+> 
+> For Claude Code sub-agent IDs:
+> 
+83,84c101,102
+< python eval/trigger-accuracy.py score runs.json --skill <name> \
+<   --skill-md .claude/skills/<name>/SKILL.md
+---
+> trigger-accuracy score runs.json --skill <name> \
+>   --skill-md <skill-dir>/SKILL.md
+85a104
+> 
+90a110,130
+> For Pi, Codex, or another harness that writes session files, build `runs.json`
+> with explicit transcript paths instead:
+> 
+> ```json
+> [{"prompt": "...", "should_fire": true, "transcripts": ["/path/to/session.jsonl"]}]
+> ```
+> 
+> Then run:
+> 
+> ```bash
+> trigger-accuracy score-transcripts runs.json --skill <name> \
+>   --skill-md <skill-dir>/SKILL.md
+> ```
+> 
+> `score-transcripts` detects Claude `tool_use`, Pi `toolCall` / `tool_execution_*`, and
+> OpenAI/Codex-style `tool_calls` / `function_call` shapes. For non-Claude
+> harnesses, a target fire is usually observed as a tool call that reads the target
+> `SKILL.md`, so pass `--skill-md`. For Codex runs where the transcript contains a textual
+> "using `<skill>`" signal but no discrete skill/read tool call, pass `--text-signal` and label the
+> result accordingly.
+> 
+94,95c134,136
+< positives**; `precision` low means the description is **over-firing on negatives** (sharpen it —
+< see `WRITING-DESCRIPTIONS.md`).
+---
+> positives**; `precision` low means the description is **over-firing on negatives** (sharpen it — keep the
+> scope's edges concrete so it declines near-misses: prompts that share keywords but need
+> something else).
+102c143
+<   "threshold": 0.5, "cli_version_tested": "2.1.159",
+---
+>   "threshold": 0.5, "text_signal": false, "cli_version_tested": "2.1.159",
+110a152,154
+> `mechanism` is `in-session-installed` for Claude `agentId` scoring and
+> `transcript-paths` for explicit Pi/Codex transcript scoring.
+> 
+112c156
+< `.claude/skills/improving-skills/references/scoring.md`, so it is a drop-in for that loop's composite.
+---
+> `${CLAUDE_PLUGIN_ROOT}/skills/improving-skills/references/scoring.md`, so it is a drop-in for that loop's composite.
+119,121c163,169
+< - **Schema pinned to `claude` v2.1.159.** Detection keys on `tool_use` blocks with
+<   `name == "Skill"` and `input.skill`. If a CLI upgrade renames those, detection fails *safe*
+<   (counts as "did not fire") — re-run the validation in this repo's history after upgrading.
+---
+> - **Schema pinned to `claude` v2.1.159 for `agentId` resolution.** Claude detection
+>   keys on `tool_use` blocks with `name == "Skill"` and `input.skill`. Portable
+>   transcript detection additionally recognizes Pi `toolCall` / `tool_execution_*` blocks and
+>   OpenAI/Codex-style `tool_calls` / `function_call` records that read the target
+>   `SKILL.md`; optional `--text-signal` recognizes Codex textual self-reports. If a CLI upgrade
+>   renames those, detection fails *safe* (counts as "did not fire") — re-run the validation in this
+>   repo's history after upgrading.

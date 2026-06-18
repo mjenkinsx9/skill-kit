@@ -1,0 +1,54 @@
+8c8
+< # generation and judging are agent-driven — see eval/value-add-test.md.
+---
+> # generation and judging are agent-driven — see reference/value-add-test.md under the resolved Skill Kit root.
+20a21,32
+> script_dir="$(cd "$(dirname "$0")" && pwd)"
+> script_root="$(cd "$script_dir/.." && pwd)"
+> if [[ -f "$script_root/reference/value-add-test.md" ]]; then
+>     skill_kit_root="$script_root"
+> elif [[ -n "${SKILL_KIT_ROOT:-}" && -f "$SKILL_KIT_ROOT/reference/value-add-test.md" ]]; then
+>     skill_kit_root="$SKILL_KIT_ROOT"
+> elif [[ -n "${CLAUDE_PLUGIN_ROOT:-}" && -f "$CLAUDE_PLUGIN_ROOT/reference/value-add-test.md" ]]; then
+>     skill_kit_root="$CLAUDE_PLUGIN_ROOT"
+> else
+>     skill_kit_root="$script_root"
+> fi
+> 
+74,77c86,94
+< # Extract positive prompts: numbered list lines under the "Positive" heading.
+< # The block ends at the NEXT heading of any kind (not only one titled "Negative"),
+< # so a "## Counter-examples"-style section can't leak negative prompts into the
+< # seed set. Strip the leading number and surrounding quotes.
+---
+> # Extract positive prompts. Two fixture formats are supported:
+> #   canonical: 'y | prompt' rows (the test-prompts.md template format, and the
+> #              only format trigger-accuracy accepts) — a 'y' row is a positive
+> #              wherever it appears, so no heading tracking is needed;
+> #   legacy:    numbered list lines under the "Positive" heading. The block ends
+> #              at the NEXT heading of any kind (not only one titled "Negative"),
+> #              so a "## Counter-examples"-style section can't leak negative
+> #              prompts into the seed set. Number and quotes are stripped.
+> # Canonical rows win when both formats are present.
+83a101,105
+>         /^[[:space:]]*[yY][[:space:]]*\|/ {
+>             sub(/^[[:space:]]*[yY][[:space:]]*\|[[:space:]]*/, "")
+>             canon[++nc]=$0
+>             next
+>         }
+89c111,115
+<             print
+---
+>             legacy[++nl]=$0
+>         }
+>         END {
+>             n = (nc > 0) ? nc : nl
+>             for (i = 1; i <= n; i++) print (nc > 0) ? canon[i] : legacy[i]
+104c130
+< run_dir="runs/$run_id"
+---
+> run_dir="${CLAUDE_PROJECT_DIR:-.}/.skill-kit/runs/$run_id"
+114c140
+< echo "Run the protocol in eval/value-add-test.md. For each seed below, generate"
+---
+> echo "Run the protocol in $skill_kit_root/reference/value-add-test.md. For each seed below, generate"

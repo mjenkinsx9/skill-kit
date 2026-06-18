@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: harness-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   harness:
     runs-on: ubuntu-latest
@@ -44,31 +48,50 @@ jobs:
       - name: Python eval-script tests
         run: python -m pytest tests -q
 
-      # Every harness manifest must parse as JSON, and name/version must stay
-      # in sync with the Claude Code manifest (the source of truth).
+      # Every harness manifest must parse as JSON. The four rich manifests must
+      # share the cross-harness metadata (name, version, description, author,
+      # homepage, repository, license) with the Claude Code manifest (the source
+      # of truth); gemini-extension.json (reduced shape) need only match
+      # name+version. keywords intentionally differ (Claude carries an extra
+      # claude-code tag) and are not compared.
       - name: Validate plugin manifests parse and metadata stays in sync
         run: |
           python - <<'EOF'
           import json, sys
           ref_path = ".claude-plugin/plugin.json"
-          manifests = [
+          rich = [
               ref_path,
               ".plugin/plugin.json",
               ".codex-plugin/plugin.json",
               ".cursor-plugin/plugin.json",
-              "gemini-extension.json",
           ]
+          gemini = "gemini-extension.json"
           data = {}
-          for m in manifests:
+          for m in rich + [gemini]:
               with open(m, encoding="utf-8") as f:
                   data[m] = json.load(f)
               print(f"ok: {m}")
           ref = data[ref_path]
           failed = False
+
+          # All five manifests share version.
           for m, d in data.items():
-              for field in ("name", "version"):
-                  if d.get(field) != ref.get(field):
-                      print(f"MISMATCH {m}: {field}={d.get(field)!r} != {ref.get(field)!r}")
+              if d.get("version") != ref.get("version"):
+                  print(f"MISMATCH {m}: version={d.get('version')!r} != {ref.get('version')!r}")
+                  failed = True
+
+          # The four rich manifests share the cross-harness metadata fields.
+          rich_fields = ("name", "description", "author", "homepage", "repository", "license")
+          for m in rich:
+              for field in rich_fields:
+                  if data[m].get(field) != ref.get(field):
+                      print(f"MISMATCH {m}: {field}={data[m].get(field)!r} != {ref.get(field)!r}")
                       failed = True
+
+          # Gemini (reduced shape) need only match name (version checked above).
+          if data[gemini].get("name") != ref.get("name"):
+              print(f"MISMATCH {gemini}: name={data[gemini].get('name')!r} != {ref.get('name')!r}")
+              failed = True
+
           sys.exit(1 if failed else 0)
           EOF

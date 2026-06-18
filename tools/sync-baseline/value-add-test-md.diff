@@ -1,0 +1,17 @@
+48c48
+< on is meaningless. `eval/value-add-test.sh <skill-dir>` does this selection for
+---
+> on is meaningless. `value-add-test <skill-dir>` does this selection for
+98c98
+< plus a per-seed win tally. `eval/value-add-test.sh --tally <results.tsv>` computes
+---
+> plus a per-seed win tally. `value-add-test --tally <results.tsv>` computes
+148,150c148,151
+< Record to `runs/value-add-<id>/results.tsv` (per-seed/per-judge rows:
+< `seed<TAB>judge<TAB>skill_total<TAB>cold_total`) plus a one-paragraph summary.
+< `runs/` is gitignored — the verdict is a recorded diagnostic, not a committed
+---
+> Record to `.skill-kit/runs/value-add-<id>/results.tsv` in the consuming project
+> (per-seed/per-judge rows: `seed<TAB>judge<TAB>skill_total<TAB>cold_total`) plus a
+> one-paragraph summary. Consumers should gitignore `.skill-kit/` — the plugin's
+> docs recommend it — since the verdict is a recorded diagnostic, not a committed

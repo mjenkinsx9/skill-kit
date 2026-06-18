@@ -33,7 +33,7 @@ HARNESS="bin/check-skill"
 FIXTURES="tests/fixtures"
 
 if [[ ! -f "$HARNESS" ]]; then
-    echo "error: $HARNESS not found (expected to run inside the mjenkins-toolbox repo)" >&2
+    echo "error: $HARNESS not found (expected to run inside the skill-kit repo)" >&2
     exit 2
 fi
 
