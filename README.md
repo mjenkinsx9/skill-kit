@@ -37,7 +37,7 @@ changes that score better.
 | 🔄 **Autoresearch** | `improving-skills` | Iterative modify → score → keep-or-revert loop that tightens an existing SKILL.md |
 | ⚓ **Goal anchoring** | `goal-new-skill` · `goal-improve-skill` | Skill work is driven by a measurable end state, not vibes |
 
-The harness is self-tested (10 pathological fixtures + 34 pytest tests) and CI
+The harness is self-tested (9 pathological fixtures + 34 pytest tests) and CI
 enforces zero FAILs *and* zero WARNs on the shipped skills, on every push and PR.
 
 ## 🚀 Install
@@ -81,4 +81,4 @@ Full documentation map: [docs/README.md](docs/README.md)
 
 ## 📄 License
 
-[MIT](LICENSE) © 2026 Mike Jenkins
+[MIT](LICENSE) © 2026 Mike Jenkins · [Security policy](SECURITY.md)

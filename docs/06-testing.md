@@ -4,7 +4,7 @@ The harness itself is under test — because a linter you can't trust is worse
 than no linter:
 
 ```bash
-bash tests/run-self-tests.sh    # 10 fixture skills with known verdicts
+bash tests/run-self-tests.sh    # 9 fixture skills with known verdicts
 python -m pytest tests -q       # 34 tests for the Python eval scripts
 ```
 
