@@ -1,0 +1,32 @@
+2c2
+< # run-self-tests.sh — self-test suite for eval/check-skill.sh.
+---
+> # run-self-tests.sh — self-test suite for bin/check-skill.
+5,7c5,8
+< # eval/tests/fixtures/ and asserts, per fixture: (a) the expected exit code,
+< # (b) presence of the specific expected PASS/WARN/FAIL lines, (c) absence of
+< # unexpected FAILs. Prints one PASS/FAIL line per fixture plus a summary.
+---
+> # tests/fixtures/ and asserts, per fixture: (a) the expected
+> # exit code, (b) presence of the specific expected PASS/WARN/FAIL lines, (c)
+> # absence of unexpected FAILs. Prints one PASS/FAIL line per fixture plus a
+> # summary.
+10c11,12
+< #   bash eval/tests/run-self-tests.sh        # from the repo root (any cwd works:
+---
+> #   bash tests/run-self-tests.sh
+> #                                            # from the repo root (any cwd works:
+27c29
+< REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+---
+> REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+30,31c32,33
+< HARNESS="eval/check-skill.sh"
+< FIXTURES="eval/tests/fixtures"
+---
+> HARNESS="bin/check-skill"
+> FIXTURES="tests/fixtures"
+34c36
+<     echo "error: $HARNESS not found (expected to run inside the skill-testing repo)" >&2
+---
+>     echo "error: $HARNESS not found (expected to run inside the skill-kit repo)" >&2

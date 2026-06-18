@@ -1,0 +1,20 @@
+11c11
+< # - harness:    PASS only when eval/check-skill.sh exits 0 on the candidate
+---
+> # - harness:    PASS only when check-skill exits 0 on the candidate
+38,39c38,40
+< # Locate eval/check-skill.sh relative to repo root. The script lives at
+< # .claude/skills/improving-skills/scripts/, so the repo root is four levels up.
+---
+> # Locate the harness. score-skill and check-skill ship side by side in the
+> # plugin's bin/, so the harness is always this script's sibling — no repo
+> # layout assumed, works wherever the plugin is installed.
+41,42c42
+< repo_root="$(cd "$script_dir/../../../.." && pwd)"
+< harness="$repo_root/eval/check-skill.sh"
+---
+> harness="$script_dir/check-skill"
+66c66
+< if [[ -n "$baseline" && -f "$baseline" ]]; then
+---
+> if [[ -n "$baseline" && -f "$baseline" ]] && (( cand_tokens > 0 )); then

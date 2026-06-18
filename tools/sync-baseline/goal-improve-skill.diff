@@ -1,0 +1,42 @@
+9c9
+< This command writes one artifact — `<skill-dir>/goal.md` — and prints the `/goal` line plus the `/improving-skills` follow-up for the user to invoke.
+---
+> This command writes one artifact — `<skill-dir>/goal.md` — and prints the `/goal` line plus the `/skill-kit:improving-skills` follow-up for the user to invoke.
+14c14
+<    - `$ARGUMENTS` should be a path to a SKILL.md or its containing directory (e.g. `.claude/skills/foo`, `staging/bar/SKILL.md`, `examples/baz/`).
+---
+>    - `$ARGUMENTS` should be a path to a SKILL.md or its containing directory (e.g. `.claude/skills/foo` or `.claude/skills/foo/SKILL.md`).
+16c16
+<    - If empty or path doesn't exist, ask: "Which SKILL.md? Give me a path like `.claude/skills/<name>` or `staging/<name>/SKILL.md`."
+---
+>    - If empty or path doesn't exist, ask: "Which SKILL.md? Give me a path like `.claude/skills/<name>` or `.claude/skills/<name>/SKILL.md`."
+27c27
+<    - Check whether `runs/` exists for previous improving-skills runs on this skill. If so, mention the most recent run's results.tsv so the user can pick a target relative to known scores.
+---
+>    - Check whether `.skill-kit/runs/` exists for previous improving-skills runs on this skill. If so, mention the most recent run's results.tsv so the user can pick a target relative to known scores.
+39c39
+<    - **Q4 (Iteration cap):** "Default cap is 20 iterations (set in `improving-skills/templates/eval.json.template`). Accept default or override?"
+---
+>    - **Q4 (Iteration cap):** "Default cap is 20 iterations (the loop's `eval.json` default). Accept default or override?"
+44c44
+<    The improving-skills loop on <skill-dir>/SKILL.md has produced a kept iteration whose row in runs/<run-id>/results.tsv shows <numeric target from Q2>. The most recent kept iteration's harness column is PASS. All rows marked positive in <skill-dir>/test-prompts.md still fire under the candidate's description (trigger accuracy on positive prompts = 1.0). <Behavior-preservation constraints from Q3>. Or stop after <Q4 cap> iterations or 5 consecutive iterations with no score improvement.
+---
+>    The improving-skills loop on <skill-dir>/SKILL.md has produced a kept iteration whose row in .skill-kit/runs/<run-id>/results.tsv shows <numeric target from Q2>. The most recent kept iteration's harness column is PASS. All rows marked positive in <skill-dir>/test-prompts.md still fire under the candidate's description (trigger accuracy on positive prompts = 1.0). <Behavior-preservation constraints from Q3>. Or stop after <Q4 cap> iterations or 5 consecutive iterations with no score improvement.
+67c67
+< - A row in `runs/<run-id>/results.tsv` with `kept=yes` shows the target metric
+---
+> - A row in `.skill-kit/runs/<run-id>/results.tsv` with `kept=yes` shows the target metric
+74c74
+< - All kept iterations pass `eval/check-skill.sh` with zero FAILs
+---
+> - All kept iterations pass `check-skill` with zero FAILs
+104c104
+<   /improving-skills <skill-dir>/SKILL.md
+---
+>   /skill-kit:improving-skills <skill-dir>/SKILL.md
+106c106
+< The improving-skills loop will see <skill-dir>/goal.md and can seed runs/<run-id>/program.md from it.
+---
+> The improving-skills loop will see <skill-dir>/goal.md and can seed .skill-kit/runs/<run-id>/program.md from it.
+111a112
+> - `/goal` is not part of this plugin or stock Claude Code — it comes from the user's own environment. If their environment has no `/goal` command, say so in the printed output and tell them the written goal.md serves as the acceptance checklist to work against manually.

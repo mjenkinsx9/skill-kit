@@ -1,0 +1,62 @@
+3,6c3,6
+< `check-skill.sh` proves a skill is *well-formed*; `value-add` and `trigger`
+< probe its *description*. **None of them run the skill's actual tooling.** For a
+< tool-wrapping / script-backed skill, the question that matters most is the one
+< none of those answer:
+---
+> `check-skill` proves a skill is *well-formed*; `value-add-test` and
+> `trigger-accuracy` probe its *description*. **None of them run the skill's
+> actual tooling.** For a tool-wrapping / script-backed skill, the question that
+> matters most is the one none of those answer:
+10c10
+< `behavioral-check.py` answers it by executing the skill's own `tests.md`
+---
+> `behavioral-check` answers it by executing the skill's own `tests.md`
+14,17c14,17
+< (`tune-skill`): that loop fans out hundreds of agents and is deliberately locked
+< to read-only / no-prod so it never touches live infrastructure — so it can grade
+< *answer quality* but can never confirm the *integration works*. This does, in a
+< handful of seconds and ~0 tokens.
+---
+> (`/skill-kit:improving-skills`): that loop fans out hundreds of agents and is
+> deliberately locked to read-only / no-prod so it never touches live
+> infrastructure — so it can grade *answer quality* but can never confirm the
+> *integration works*. This does, in a handful of seconds and ~0 tokens.
+21c21
+< Like `value-add` and `trigger`, the split is deliberate:
+---
+> Like `value-add-test` and `trigger-accuracy`, the split is deliberate:
+36,39c36,39
+< python eval/behavioral-check.py <skill-dir>                       # run from the current dir
+< python eval/behavioral-check.py <skill-dir> --cwd <checkout>      # run commands from <checkout>
+< python eval/behavioral-check.py <skill-dir> --dry-run             # list commands, run nothing
+< python eval/behavioral-check.py <skill-dir> --json > result.json  # structured output too
+---
+> behavioral-check <skill-dir>                       # run from the current dir
+> behavioral-check <skill-dir> --cwd <checkout>      # run commands from <checkout>
+> behavioral-check <skill-dir> --dry-run             # list commands, run nothing
+> behavioral-check <skill-dir> --json > result.json  # structured output too
+59,60c59,60
+< report "no runnable commands found"; verify those with `value-add` /
+< `check-skill.sh` instead.
+---
+> report "no runnable commands found"; verify those with `value-add-test` /
+> `check-skill` instead.
+77,80c77,80
+< it at skills whose `tests.md` you trust; the skills in this repo are read-only by
+< author contract (they query and report, never mutate). Use `--dry-run` first to
+< see exactly what will run. The harness adds nothing of its own — it runs only what
+< the skill documents.
+---
+> it at skills whose `tests.md` you trust; well-authored skills keep their test
+> scenarios read-only by author contract (they query and report, never mutate).
+> Use `--dry-run` first to see exactly what will run. The harness adds nothing of
+> its own — it runs only what the skill documents.
+84,86c84,86
+< Same spirit as the rest of `eval/`: trivial to read and modify, pure stdlib, no
+< dependencies. Markdown command-extraction is cleaner in Python than shell, and it
+< runs the same on Windows and POSIX.
+---
+> Same spirit as the rest of the plugin's `bin/` helpers: trivial to read and
+> modify, pure stdlib, no dependencies. Markdown command-extraction is cleaner in
+> Python than shell, and it runs the same on Windows and POSIX.

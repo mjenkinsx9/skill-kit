@@ -1,0 +1,8 @@
+15c15
+< orchestrator's job (see behavioral-check.md). Pure stdlib.
+---
+> orchestrator's job (see ${CLAUDE_PLUGIN_ROOT}/reference/behavioral-check.md). Pure stdlib.
+18c18
+<   python eval/behavioral-check.py <skill-dir> [--cwd DIR] [--timeout S] [--dry-run] [--json]
+---
+>   behavioral-check <skill-dir> [--cwd DIR] [--timeout S] [--dry-run] [--json]
