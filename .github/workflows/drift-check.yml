@@ -22,23 +22,21 @@ jobs:
         uses: actions/checkout@v4
 
       # Clone the dev-bench at the ref pinned in SYNC.md ("Pinned dev-bench
-      # ref"). Keep this ref in lockstep with SYNC.md when you re-sync.
+      # ref"). Keep this SHA in lockstep with SYNC.md when you re-sync.
+      # `ref` MUST be a full 40-char commit SHA (actions/checkout treats a short
+      # SHA as a branch/tag pattern and fails to fetch it); fetch-depth: 0 makes
+      # an arbitrary historical commit guaranteed-fetchable.
       #
-      # NOTE: if mjenkinsx9/skill-testing is private, the public-clone checkout
-      # below will 404. In that case give this step a PAT with read access:
-      #
-      #   - uses: actions/checkout@v4
-      #     with:
-      #       repository: mjenkinsx9/skill-testing
-      #       ref: ac28303
-      #       path: skill-testing
-      #       token: ${{ secrets.SKILL_TESTING_RO_PAT }}
+      # NOTE: if mjenkinsx9/skill-testing is private, the checkout below will
+      # 404. In that case give this step a PAT with read access via token:
+      #   token: ${{ secrets.SKILL_TESTING_RO_PAT }}
       - name: Checkout skill-testing dev-bench (pinned ref)
         uses: actions/checkout@v4
         with:
           repository: mjenkinsx9/skill-testing
-          ref: ac28303
+          ref: ac283030475fbd147dd55b299b4214bfc3dc6443
           path: skill-testing
+          fetch-depth: 0
 
       - name: Check for undocumented drift
         run: DB="$GITHUB_WORKSPACE/skill-testing" bash tools/check-sync.sh

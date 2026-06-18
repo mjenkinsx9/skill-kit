@@ -54,9 +54,12 @@ dev-bench** (the reverse of the default):
 
 ## Pre-release drift check
 
-**Pinned dev-bench ref: `ac28303`** — the `skill-testing` commit the baselines
-and the table below are pinned to. CI (`.github/workflows/drift-check.yml`)
-diffs against this exact ref; bump it here whenever you re-sync.
+**Pinned dev-bench ref: `ac283030475fbd147dd55b299b4214bfc3dc6443`** (`ac28303`) —
+the `skill-testing` commit the baselines and the table below are pinned to. CI
+(`.github/workflows/drift-check.yml`) checks out this exact full SHA and diffs
+against it; bump it here (full SHA) and regenerate baselines whenever you re-sync.
+Note: `origin/main` of the dev-bench has since advanced past this pin — re-syncing
+to the newer tip is a tracked follow-up (the drift check will flag what moved).
 
 The authoritative, automated check is `tools/check-sync.sh` (golden-diff per
 pair + manifest-metadata assertions); CI runs it on every PR. The loop below is
