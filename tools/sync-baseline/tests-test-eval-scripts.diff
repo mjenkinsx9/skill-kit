@@ -40,62 +40,9 @@
 ---
 > bc = _load("behavioral_check", "behavioral-check")
 > ta = _load("trigger_accuracy", "trigger-accuracy")
-258a267,301
->     def test_pi_tool_call_read_fallback(self, tmp_path):
->         blocks = [{
->             "type": "toolCall", "name": "read",
->             "arguments": {"path": "/repo/.codex/skills/widget-lint/SKILL.md"},
->         }]
->         t = _write_transcript(tmp_path / "pi.jsonl", blocks)
->         res = ta.detect_fire(
->             t, "widget-lint", skill_md=".codex/skills/widget-lint/SKILL.md")
->         assert res == {"fired": True, "other_skill_fired": None, "error": None}
+318a327,383
 > 
->     def test_openai_tool_calls_read_fallback(self, tmp_path):
->         obj = {"message": {"role": "assistant", "tool_calls": [{"function": {
->             "name": "functions.read",
->             "arguments": json.dumps(
->                 {"path": "/repo/.codex/skills/widget-lint/SKILL.md"}),
->         }}]}}
->         t = tmp_path / "codex.jsonl"
->         t.write_text(json.dumps(obj), encoding="utf-8")
->         res = ta.detect_fire(
->             t, "widget-lint", skill_md=".codex/skills/widget-lint/SKILL.md")
->         assert res == {"fired": True, "other_skill_fired": None, "error": None}
 > 
->     def test_top_level_function_call_read_fallback(self, tmp_path):
->         obj = {
->             "type": "function_call",
->             "name": "read",
->             "arguments": json.dumps(
->                 {"path": "/repo/.codex/skills/widget-lint/SKILL.md"}),
->         }
->         t = tmp_path / "function_call.jsonl"
->         t.write_text(json.dumps(obj), encoding="utf-8")
->         res = ta.detect_fire(
->             t, "widget-lint", skill_md=".codex/skills/widget-lint/SKILL.md")
->         assert res == {"fired": True, "other_skill_fired": None, "error": None}
-> 
-263a307,324
->     def test_empty_transcript_is_error(self, tmp_path):
->         t = tmp_path / "empty.jsonl"
->         t.write_text("", encoding="utf-8")
->         res = ta.detect_fire(t, "widget-lint")
->         assert res == {"fired": False, "other_skill_fired": None,
->                        "error": "empty-transcript"}
-> 
->     def test_codex_text_signal_optional(self, tmp_path):
->         t = tmp_path / "codex-text.jsonl"
->         t.write_text(json.dumps({
->             "type": "item.completed",
->             "item": {"type": "agent_message",
->                      "text": "I am using the `widget-lint` workflow."},
->         }), encoding="utf-8")
->         assert ta.detect_fire(t, "widget-lint")["fired"] is False
->         assert ta.detect_fire(t, "widget-lint", text_signal=True) == {
->             "fired": True, "other_skill_fired": None, "error": None}
-> 
-267a329,385
 > class TestPathShims:
 >     def test_agent_workflow_shims_are_executable_and_resolve_repo_root(self):
 >         expected = {
@@ -151,21 +98,3 @@
 >             in res.stdout
 >         )
 >         assert (project / ".skill-kit" / "runs").exists()
-> 
-> 
-319a438,452
-> 
->     def test_score_transcripts_uses_explicit_paths(self, tmp_path):
->         fire = [_skill_block("widget-lint")]
->         miss = [_skill_block("other-skill")]
->         fire_t = _write_transcript(tmp_path / "fire.jsonl", fire)
->         miss_t = _write_transcript(tmp_path / "miss.jsonl", miss)
->         runs = [
->             {"prompt": "p-tp", "should_fire": True,
->              "transcripts": [str(fire_t)]},
->             {"prompt": "p-tn", "should_fire": False,
->              "transcripts": [str(miss_t)]},
->         ]
->         result = ta.score_transcripts(runs, "widget-lint", None, 0.5)
->         assert result["mechanism"] == "transcript-paths"
->         assert result["aggregate"]["trigger"] == 1.0
