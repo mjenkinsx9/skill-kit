@@ -54,12 +54,12 @@ dev-bench** (the reverse of the default):
 
 ## Pre-release drift check
 
-**Pinned dev-bench ref: `ac283030475fbd147dd55b299b4214bfc3dc6443`** (`ac28303`) —
-the `skill-testing` commit the baselines and the table below are pinned to. CI
-(`.github/workflows/drift-check.yml`) checks out this exact full SHA and diffs
-against it; bump it here (full SHA) and regenerate baselines whenever you re-sync.
-Note: `origin/main` of the dev-bench has since advanced past this pin — re-syncing
-to the newer tip is a tracked follow-up (the drift check will flag what moved).
+**Pinned dev-bench ref: `fd200a824b86cbec6abf06b0609ea29ebd32a282`** (`fd200a8`,
+current `skill-testing` tip) — the commit the baselines and the table below are
+pinned to. CI (`.github/workflows/drift-check.yml`) checks out this exact full SHA
+and diffs against it; bump it here (full SHA) and regenerate baselines whenever you
+re-sync. (`fd200a8` is the merge of the exec-bit fix and is tree-identical to the
+prior `ac28303`, so the baselines are unchanged.)
 
 The authoritative, automated check is `tools/check-sync.sh` (golden-diff per
 pair + manifest-metadata assertions); CI runs it on every PR. The loop below is

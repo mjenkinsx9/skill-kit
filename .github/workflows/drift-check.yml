@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mjenkinsx9/skill-testing
-          ref: ac283030475fbd147dd55b299b4214bfc3dc6443
+          ref: fd200a824b86cbec6abf06b0609ea29ebd32a282
           path: skill-testing
           fetch-depth: 0
 
