@@ -12,15 +12,15 @@ the repo split, the dev-bench harness was 144 lines ahead (resynced 2026-06-10).
 | dev-bench (skill-testing) | plugin (skill-kit) | intentional adaptations in the plugin copy |
 |---|---|---|
 | `eval/check-skill.sh` | `bin/check-skill` | header comment filename/usage only (2 lines) |
-| `eval/value-add-test.sh` | `bin/value-add-test` | doc refs resolve from `${SKILL_KIT_ROOT}`/`${CLAUDE_PLUGIN_ROOT}`/`dirname "$0"/..`; `run_dir` → `${CLAUDE_PROJECT_DIR:-.}/.skill-kit/runs/`; **plus a dual-format seed parser — accepts canonical `y \| prompt` rows (the test-prompts template format, and the only format `trigger-accuracy` reads) in addition to the legacy "Positive"-heading format, canonical winning when both are present. Dev-bench parses legacy only and trails — see "Plugin leads" below** |
+| `eval/value-add-test.sh` | `bin/value-add-test` | doc refs resolve from `${SKILL_KIT_ROOT}`/`${CLAUDE_PLUGIN_ROOT}`/`dirname "$0"/..`; `run_dir` → `${CLAUDE_PROJECT_DIR:-.}/.skill-kit/runs/` (the dual-format `y \| prompt` seed parser is now shared with the dev-bench) |
 | `eval/value-add-test.md` | `reference/value-add-test.md` | bare command names; Artifact section uses `.skill-kit/runs/` |
-| `eval/trigger-accuracy.py` | `bin/trigger-accuracy` | **intentional feature-superset (multi-harness)** — beyond the docstring doc-pointer, the plugin adds the `run-probes` + `score-transcripts` subcommands, Pi/Codex/OpenAI tool-call shape detection (`_iter_content_tool_blocks`, `_iter_chat_tool_calls`, `_coerce_args`), `_text_signal_fired`/`--text-signal`, the `_score_with_resolver`/`score_transcripts` refactor, an empty-transcript guard, and extra transcript path keys. Dev-bench is Claude-only and **trails** — see "Plugin leads" below |
-| `eval/trigger-accuracy.md` | `reference/trigger-accuracy.md` | bare command names; `<skill-dir>` generalization; **documents the plugin-only `run-probes`/`score-transcripts` subcommands and `--text-signal`**; diagnostic-only description advice (constructive guidance in `docs/07-authoring.md`); `references/scoring.md` pointer |
+| `eval/trigger-accuracy.py` | `bin/trigger-accuracy` | docstring doc-pointer; `run-probes` out-dir → `${CLAUDE_PROJECT_DIR}`-relative `.skill-kit/runs/` (dev-bench uses `runs/`). The multi-harness engine (`run-probes`/`score-transcripts`/Pi-Codex detection) is now shared with the dev-bench |
+| `eval/trigger-accuracy.md` | `reference/trigger-accuracy.md` | bare command names; `<skill-dir>` generalization; diagnostic-only description advice (constructive guidance in `docs/07-authoring.md`); `references/scoring.md` pointer |
 | `eval/behavioral-check.py` | `bin/behavioral-check` | docstring doc-pointer + usage line |
 | `eval/behavioral-check.md` | `reference/behavioral-check.md` | bare command names; plugin terms (`/skill-kit:improving-skills`, no `eval/`/`staging/`) |
 | `eval/tests/` | `tests/` | `HARNESS`/`FIXTURES`/repo-root paths; explicit `SourceFileLoader` for extensionless bin scripts; fixtures byte-identical |
 | `.claude/skills/improving-skills/` | `skills/improving-skills/` | `/skill-kit:`-namespaced invocations; `.skill-kit/runs/` scratch dir; bare helper names; `${CLAUDE_PLUGIN_ROOT}/reference/…` pointers |
-| `.claude/skills/improving-skills/scripts/score-skill.sh` | `bin/score-skill` | locates the harness as a `bin/` sibling; **plus a `cand_tokens > 0` divide-by-zero guard on the baseline comparison. Dev-bench lacks the guard and trails — see "Plugin leads" below** |
+| `.claude/skills/improving-skills/scripts/score-skill.sh` | `bin/score-skill` | locates the harness as a `bin/` sibling (the `cand_tokens > 0` guard is now shared with the dev-bench) |
 | `.claude/skills/improving-skills/scripts/token-count.sh` | `bin/token-count` | none beyond the name |
 | `.claude/commands/goal-*.md` | `commands/goal-*.md` | `/skill-kit:`-namespacing; anchors at `.claude/skills/<name>/` (dev-bench uses `staging/`); `.skill-kit/runs/`; bare `check-skill`; **plus the inlined "never from imagination" doctrine line (in `goal-new-skill.md`) and a plugin-only note in both files that `/goal` is not part of this plugin or stock Claude Code — if absent, the written `goal.md` is the manual acceptance checklist** |
 | `LICENSE` | `LICENSE` | none — currently byte-identical (both carry the same holder); kept in the drift check so a future divergence is caught |
@@ -40,26 +40,22 @@ Scope decision (deliberately not shipped): the dev-bench also carries the
 and are **not** shipped here — they sit off skill-kit's product surface
 (author / evaluate / improve-skills). Only `improving-skills` crosses the split.
 
-## Pairs where the plugin leads the dev-bench (back-port pending)
+## History: plugin-led features, now back-ported
 
-These plugin copies are intentional **supersets** — a re-sync must **NOT** revert
-them to the smaller dev-bench versions. Until the dev-bench catches up, these
-features live only here, and the direction of flow for them is **plugin →
-dev-bench** (the reverse of the default):
-
-- `bin/trigger-accuracy` — `run-probes`, `score-transcripts`, Pi/Codex/OpenAI
-  tool-call detection, `--text-signal`, empty-transcript guard
-- `bin/value-add-test` — canonical `y | prompt` seed parser (template format)
-- `bin/score-skill` — `cand_tokens > 0` divide-by-zero guard
+`trigger-accuracy`'s multi-harness engine, `value-add-test`'s dual-format seed
+parser, and `score-skill`'s `cand_tokens > 0` guard were all born in this plugin
+(cross-harness work) and once lived only here. They were back-ported to the
+dev-bench in skill-testing#2; as of the pinned ref below those three pairs differ
+**only** by the documented path/name adaptations in the table above. There are no
+outstanding plugin-led divergences.
 
 ## Pre-release drift check
 
-**Pinned dev-bench ref: `fd200a824b86cbec6abf06b0609ea29ebd32a282`** (`fd200a8`,
-current `skill-testing` tip) — the commit the baselines and the table below are
-pinned to. CI (`.github/workflows/drift-check.yml`) checks out this exact full SHA
-and diffs against it; bump it here (full SHA) and regenerate baselines whenever you
-re-sync. (`fd200a8` is the merge of the exec-bit fix and is tree-identical to the
-prior `ac28303`, so the baselines are unchanged.)
+**Pinned dev-bench ref: `25c389cb8ea7db71ea11bfdb80557266b73a0e0a`** (`25c389c`,
+current `skill-testing` tip, includes the skill-testing#2 back-port) — the commit
+the baselines and the table above are pinned to. CI
+(`.github/workflows/drift-check.yml`) checks out this exact full SHA and diffs
+against it; bump it here (full SHA) and regenerate baselines whenever you re-sync.
 
 The authoritative, automated check is `tools/check-sync.sh` (golden-diff per
 pair + manifest-metadata assertions); CI runs it on every PR. The loop below is

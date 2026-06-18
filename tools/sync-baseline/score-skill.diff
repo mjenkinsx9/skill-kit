@@ -14,7 +14,3 @@
 < harness="$repo_root/eval/check-skill.sh"
 ---
 > harness="$script_dir/check-skill"
-66c66
-< if [[ -n "$baseline" && -f "$baseline" ]]; then
----
-> if [[ -n "$baseline" && -f "$baseline" ]] && (( cand_tokens > 0 )); then
