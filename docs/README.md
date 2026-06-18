@@ -17,6 +17,8 @@ inside the evaluation stack.
 |---|---|
 | [03 · Usage](03-usage.md) | Lint / behavioral / value-add / trigger commands, `/skill-kit:` slash commands, and the scoring composite |
 | [04 · Multi-harness support](04-harnesses.md) | Per-harness status, manifests, and install/load notes (Claude Code, Copilot CLI, Codex, Cursor, Gemini) |
+| [07 · Authoring skills](07-authoring.md) | Authoring skills — methodology, anti-patterns, sidecar policy, writing descriptions |
+| [08 · Checks reference](08-checks-reference.md) | The 21 harness checks + secret/path allowlist escape hatches |
 
 ## Reference
 
@@ -36,6 +38,7 @@ inside the evaluation stack.
 | Doc | Description |
 |---|---|
 | [AGENTS.md](../AGENTS.md) | Guidance for agents/humans working in the repo, test commands, and the release / version-bump guide |
+| [Security policy](../SECURITY.md) | Threat model, the harness's secret/security-smell scans, and how to report a vulnerability |
 | [SYNC.md](../SYNC.md) | The dev-bench ↔ plugin file-pairing table and the pre-release drift check |
 | [MIGRATION.md](../MIGRATION.md) | Extraction history from the skill-testing dev-bench and design-decision record |
 
